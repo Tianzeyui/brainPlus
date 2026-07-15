@@ -162,6 +162,7 @@ export class ContextWindowManager {
             role: current.role,
             content: content.slice(0, MAX_TOOL_RESULT_CHARS) +
               `\n\n[... 工具结果过长，已截断。完整共 ${content.length} 字符，截断后保留前 ${MAX_TOOL_RESULT_CHARS} 字符 ...]`,
+            toolCallId: (current as any).toolCallId,
           } as unknown as ChatMessage)
           i++
           continue
@@ -257,10 +258,20 @@ export class ContextWindowManager {
       return { ...truncResult, freedTokens: microFreed + (originalTokens - truncResult.compressedTokens) }
     }
 
-    // 工具原子性：确保分割点不拆 tool-call 和 tool-result 对
+    // 工具原子性：确保分割点不拆 assistant(tool_calls) 和它的 tool 结果
     let splitIdx = compacted.length - recentCount
     while (splitIdx > 1 && compacted[splitIdx]?.role === 'tool') {
-      splitIdx++ // tool 消息属于上一条 assistant 的工具调用，不能作为开始
+      splitIdx++ // tool 消息不能作为后半段的开始，往后移
+    }
+    // 反向：split 前的 assistant 如果有 tool_calls，它的 tool 都在后半段，
+    // 整个 assistant→tools 链必须一起划到后半段
+    while (splitIdx > 1) {
+      const prev = compacted[splitIdx - 1]
+      if (prev?.role === 'assistant' && Array.isArray((prev as any).toolCalls) && (prev as any).toolCalls.length > 0) {
+        splitIdx--
+      } else {
+        break
+      }
     }
 
     const toSummarize = compacted.slice(0, splitIdx)

@@ -41,6 +41,28 @@ function convertTools(tools: Record<string, ToolDef>): Anthropic.Tool[] {
 /**
  * 把 stardust 消息转成 Anthropic API 消息格式
  */
+function normalizeContent(content: string | any[]): string | Anthropic.ContentBlockParam[] {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return String(content)
+
+  return content.map((block) => {
+    if (block?.type === 'image' && block.image) {
+      // 将我们的格式 { type:'image', image:'data:...;base64,...', mimeType:'...' }
+      // 转为 Anthropic { type:'image', source:{ type:'base64', media_type:'...', data:'...' } }
+      const image: string = block.image
+      const mediaType = block.mimeType || 'image/png'
+      let data = image
+      const m = image.match(/^data:[^;]*;base64,(.+)$/)
+      if (m) data = m[1]
+      return {
+        type: 'image' as const,
+        source: { type: 'base64' as const, media_type: mediaType, data },
+      }
+    }
+    return block
+  })
+}
+
 function convertMessages(
   messages: ChatMessage[],
   system?: string,
@@ -53,7 +75,7 @@ function convertMessages(
       continue
     }
     if (m.role === 'user') {
-      msgs.push({ role: 'user', content: m.content })
+      msgs.push({ role: 'user', content: normalizeContent(m.content) })
     } else if (m.role === 'assistant') {
       // 构建 assistant 内容：文本 + 工具调用
       const content: Anthropic.ContentBlockParam[] = []

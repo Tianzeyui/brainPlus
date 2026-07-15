@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const ipcListeners = new Map<string, Set<(...args: any[]) => void>>()
 
@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcListeners.get(channel)?.delete(cb)
   },
   platform: process.platform,
+
+  window: {
+    openNav: (navId: string, label: string) => ipcRenderer.invoke('window:openNav', navId, label),
+  },
 
   ai: {
     openModel: (url: string, iconUrl?: string) => ipcRenderer.invoke('ai:openModel', url, iconUrl),
@@ -37,6 +41,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   file: {
     checkType: (filePath: string) => ipcRenderer.invoke('file:checkType', filePath),
     convert: (filePath: string) => ipcRenderer.invoke('file:convert', filePath),
+    /** Electron 32+ 中 File.path 已废弃，用 webUtils 获取路径 */
+    getPathForFile: (file: File) => webUtils.getPathForFile(file),
     onConvertProgress: (cb: (data: { filePath: string; message: string }) => void) => {
       const handler = (_event: any, data: any) => cb(data)
       ipcRenderer.on('file:convertProgress', handler)

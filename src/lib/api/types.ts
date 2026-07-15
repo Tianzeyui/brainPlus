@@ -6,7 +6,7 @@
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system' | 'tool'
-  content: string
+  content: string | any[]
   /** 工具调用 ID（role='tool' 时必需） */
   toolCallId?: string
   /** 工具调用列表（role='assistant' 且有工具调用时） */

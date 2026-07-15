@@ -40,6 +40,9 @@ export interface MCPPrompt {
 
 export interface ElectronAPI {
   platform: string
+  window: {
+    openNav: (navId: string, label: string) => Promise<void>
+  }
   ai: {
     openModel: (url: string, iconUrl?: string) => Promise<void>
   }
@@ -53,6 +56,8 @@ export interface ElectronAPI {
     checkType: (filePath: string) => Promise<{ isImage: boolean; isConvertible: boolean }>
     convert: (filePath: string) => Promise<{ success: boolean; content?: string; error?: string }>
     onConvertProgress: (cb: (data: { filePath: string; message: string }) => void) => () => void
+    /** Electron 32+ File.path 替代方案 */
+    getPathForFile: (file: File) => string
   }
   workspace: {
     getPaths: () => Promise<{ root: string; output: string; stardustDir?: string; isCustom?: boolean }>

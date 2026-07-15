@@ -273,7 +273,11 @@ export async function chat(
   })
   if (opts?.autoMode && !hasPriorToolCalls) {
     const lastMsg = messages[messages.length - 1]?.content
-    const userText = typeof lastMsg === 'string' ? lastMsg : ''
+    // 提取用户文本：字符串直接取，ContentPart 数组提取 text 块
+    const userText = typeof lastMsg === 'string' ? lastMsg
+      : Array.isArray(lastMsg) ? lastMsg.filter((p: any) => p?.type === 'text').map((p: any) => p.text || '').join(' ') : ''
+    // 含图片的消息跳过 fast 模型预检，直接走主模型（fast 模型不支持 vision）
+    const hasImages = Array.isArray(lastMsg) && lastMsg.some((p: any) => p?.type === 'image')
     // 明显的编码操作 → 直接走工具，不预检
     const codeHints = [
       // 英文
@@ -288,8 +292,8 @@ export async function chat(
     ]
     const needsTools = codeHints.some(w => userText.toLowerCase().includes(w))
 
-    // 非明显编码 → fast 模型预检（仅首条消息，无工具历史时生效）
-    if (!needsTools) {
+    // 非明显编码且不含图片 → fast 模型预检（含图片时跳过，fast 模型不支持 vision）
+    if (!needsTools && !hasImages) {
       try {
         const { delegateToModel } = await import('./chatService')
         const fastReply = await delegateToModel('fast', userText, agentRules)

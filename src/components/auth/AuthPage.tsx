@@ -27,9 +27,7 @@ export function AuthPage() {
       <div className="absolute top-0 left-0 right-0 h-9" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
       {/* 头部 */}
       <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary">
-          <img src="/assets/icons/iconWhite.svg" alt="Stardust" className="h-10 w-10" />
-        </div>
+        <img src="/assets/icons/icon.svg" alt="Stardust" className="h-10 w-10 shrink-0" />
         <h1 className="text-3xl font-bold tracking-tight">Stardust</h1>
       </div>
 

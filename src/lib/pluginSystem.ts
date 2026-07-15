@@ -326,7 +326,7 @@ class PluginSystemImpl {
     const result = await api.load(dirPath).catch(() => null)
     if (!result?.success) return
     if (this.plugins.has(result.manifest.id)) return
-    this.loadAndRegister(dirPath).catch(() => {})
+    await this.loadAndRegister(dirPath).catch(() => {})
   }
 
   /** 加载并注册插件 */
@@ -459,7 +459,6 @@ class PluginSystemImpl {
         tools[prefixedKey].inputSchema = jsonSchema(tools[prefixedKey].inputSchema)
       }
     }
-    console.log('[PluginSystem] 注册的 AI 工具:', Object.keys(tools))
     return tools
   }
 

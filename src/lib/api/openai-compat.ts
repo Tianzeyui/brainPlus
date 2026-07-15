@@ -9,7 +9,7 @@ import type { ToolDef, StreamEvent, ChatMessage, ProviderConfig, Usage } from '.
 
 interface OpenAIMessage {
   role: string
-  content: string | null
+  content: string | null | Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }>
   tool_calls?: Array<{
     id: string
     type: 'function'
@@ -17,6 +17,21 @@ interface OpenAIMessage {
   }>
   tool_call_id?: string
   reasoning_content?: string
+}
+
+/** 将我们的图片格式转为 OpenAI Vision 兼容格式 */
+function normalizeContent(content: string | any[]): string | any[] {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return String(content)
+
+  return content.map((block) => {
+    if (block?.type === 'image' && block.image) {
+      // 我们的格式 { type:'image', image:'data:...;base64,...', mimeType:'...' }
+      // OpenAI 格式 { type:'image_url', image_url:{ url:'data:...' } }
+      return { type: 'image_url', image_url: { url: block.image } }
+    }
+    return block
+  })
 }
 
 function convertMessages(messages: ChatMessage[], system?: string): OpenAIMessage[] {
@@ -31,12 +46,15 @@ function convertMessages(messages: ChatMessage[], system?: string): OpenAIMessag
     if (m.role === 'system') {
       result.push({ role: 'system', content: m.content })
     } else if (m.role === 'user') {
-      result.push({ role: 'user', content: m.content })
+      const content = normalizeContent(m.content)
+      result.push({ role: 'user', content: content as any })
     } else if (m.role === 'assistant') {
-      const msg: OpenAIMessage = { role: 'assistant', content: m.content || '' }
-      if (m.toolCalls && m.toolCalls.length > 0) {
+      const hasTools = m.toolCalls && m.toolCalls.length > 0
+      // DeepSeek 要求纯 tool 消息 content 为 null，不能是空字符串
+      const msg: OpenAIMessage = { role: 'assistant', content: hasTools && !m.content ? null : (m.content || '') }
+      if (hasTools) {
         msg.tool_calls = m.toolCalls.map(tc => ({
-          id: tc.id,
+          id: (tc.id || '').startsWith('call_') ? tc.id : 'call_' + (tc.id || ''),
           type: 'function' as const,
           function: { name: tc.name, arguments: JSON.stringify(tc.input) },
         }))
@@ -44,10 +62,13 @@ function convertMessages(messages: ChatMessage[], system?: string): OpenAIMessag
       if (m.reasoning_content) msg.reasoning_content = m.reasoning_content
       result.push(msg)
     } else if (m.role === 'tool') {
+      // 避免 Double prefix: DeepSeek 返回的 ID 已自带 call_ 前缀
+      const rawId = m.toolCallId || ''
+      const tid = rawId.startsWith('call_') ? rawId : 'call_' + rawId
       result.push({
         role: 'tool',
         content: m.content,
-        tool_call_id: m.toolCallId || '',
+        tool_call_id: tid,
       })
     }
   }
@@ -156,6 +177,24 @@ export async function* streamOpenAICompat(
   const openaiMessages = convertMessages(messages, systemPrompt)
   const openaiTools = convertTools(tools)
   const hasTools = openaiTools.length > 0
+
+  // 模型不支持 vision 时剥离图片块，避免 API 400 错误
+  const supportsVision = config.capabilities?.includes('vision')
+  if (!supportsVision) {
+    for (const msg of openaiMessages) {
+      if (Array.isArray(msg.content)) {
+        const before = msg.content.length
+        msg.content = msg.content.filter((b: any) => b?.type !== 'image_url')
+        if (msg.content.length < before) {
+          console.warn('[openai-compat] 模型不支持 vision，已剥离', before - msg.content.length, '个图片块')
+        }
+        // 如果过滤后只剩一个 text 块，降级为纯字符串
+        if (msg.content.length === 1 && msg.content[0]?.type === 'text') {
+          msg.content = msg.content[0].text
+        }
+      }
+    }
+  }
 
   const body: Record<string, unknown> = {
     model: config.modelId,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, memo } from 'react'
-import { Check, X, Shield, ShieldCheck, Cable, BookOpen, MessageSquare, FileText, Image, Zap, FolderOpen, Loader2, ChevronDown, IdCard, ExternalLink, Brain, Terminal, Search, Globe } from 'lucide-react'
+import { Check, X, Shield, ShieldCheck, Cable, BookOpen, MessageSquare, FileText, Image, Zap, FolderOpen, Loader2, ChevronDown, IdCard, ExternalLink, Brain, Terminal, Search, Globe, Trash2, Bookmark, Layers } from 'lucide-react'
 import MarkdownPreview from '@uiw/react-markdown-preview'
 import type { UIMessage, ToolCallStatus, MessageAttachment, AgentToolCallEntry, AgentTimelineItem, TerminalStatus } from '@/types/chat'
 import { useAuth } from '@/contexts/AuthContext'
@@ -42,6 +42,16 @@ const TOOL_STYLE: Record<string, {
   workspace: { icon: Check, labelIcon: FolderOpen, label: '工作区' },
 }
 
+/** 不需要在聊天流中展示的工具——已有专用 UI 承载 */
+const HIDDEN_TOOLS = new Set([
+  'run_terminal',
+  'run_terminal_input',
+  'ask_user',
+  'update_task_list',
+  'show_progress',
+  'notify_complete',
+])
+
 function ChatMessageInner({ msg }: ChatMessageProps) {
   if (msg.terminal) {
     return (
@@ -74,10 +84,11 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
     return (
       <div className="flex flex-col gap-2">
         {batch.map(tc => {
-          if (tc.name === 'run_terminal' ) return null
+          if (HIDDEN_TOOLS.has(tc.name)) return null
           if (tc.name === 'web_search') return <SearchBubble key={tc.id} tc={tc} />
           if (tc.name === 'web_fetch') return <FetchBubble key={tc.id} tc={tc} />
           if (tc.name === 'delegate_task' || tc.name === 'delegate_batch') return <DelegateBubble key={tc.id} tc={tc} />
+          if (tc.name.startsWith('memory_')) return <MemoryBubble key={tc.id} tc={tc} />
           return <ToolBubble key={tc.id} tc={tc} />
         })}
       </div>
@@ -85,11 +96,12 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
   }
 
   if (msg.role === 'tool' && msg.toolCall) {
-    if (msg.toolCall.name === 'run_terminal' || msg.toolCall.name === 'run_terminal_input') return null
+    if (HIDDEN_TOOLS.has(msg.toolCall.name)) return null
     // 搜索/抓取用自定义样式
     if (msg.toolCall.name === 'web_search') return <SearchBubble tc={msg.toolCall} />
     if (msg.toolCall.name === 'web_fetch') return <FetchBubble tc={msg.toolCall} />
     if (msg.toolCall.name === 'delegate_task') return <DelegateBubble tc={msg.toolCall} />
+    if (msg.toolCall.name.startsWith('memory_')) return <MemoryBubble tc={msg.toolCall} />
     return msg.parentAgent ? (
       <div className="ml-4 border-l-2 border-primary/20 pl-3 my-1">
         <ToolBubble tc={msg.toolCall} />
@@ -338,6 +350,206 @@ function ToolBubble({ tc }: { tc: ToolCallStatus }) {
         </div>
       </div>
     </div>
+  )
+}
+
+// ====== 记忆工具专用组件 ======
+
+const MEMORY_TYPE_META: Record<string, { label: string; cls: string }> = {
+  user: { label: '用户', cls: 'text-amber-500/70 bg-amber-500/5 border-amber-500/15' },
+  project: { label: '项目', cls: 'text-blue-500/70 bg-blue-500/5 border-blue-500/15' },
+  reference: { label: '参考', cls: 'text-emerald-500/70 bg-emerald-500/5 border-emerald-500/15' },
+}
+
+/** 统一的记忆卡片容器：左侧细线 + 圆角卡片 */
+function MemoryCard({ children, muted }: { children: React.ReactNode; muted?: boolean }) {
+  return (
+    <div className="flex gap-2.5 max-w-full">
+      <div className={`w-px shrink-0 self-stretch rounded-full ${muted ? 'bg-border/30' : 'bg-border/50'}`} />
+      <div className={`min-w-0 flex-1 rounded-lg border px-3 py-2 ${
+        muted ? 'border-border/40 bg-card/30' : 'border-border/50 bg-card/40'
+      }`}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/** 记忆操作头部行：icon + slug + type badge + status */
+function MemoryHeader({ icon: Icon, name, type, status, extra }: {
+  icon: typeof Brain
+  name: string
+  type?: string
+  status: string
+  extra?: React.ReactNode
+}) {
+  const meta = type ? MEMORY_TYPE_META[type] : null
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+      <span className="font-mono text-[11px] font-medium truncate">{name || '?'}</span>
+      {meta && (
+        <span className={`inline-flex items-center rounded border px-1.5 py-px text-[9px] font-medium shrink-0 ${meta.cls}`}>
+          {meta.label}
+        </span>
+      )}
+      {extra}
+      <span className="text-[9px] text-muted-foreground/30 ml-auto shrink-0">{status}</span>
+    </div>
+  )
+}
+
+function MemoryBubble({ tc }: { tc: ToolCallStatus }) {
+  const input = (tc.input || {}) as Record<string, any>
+
+  switch (tc.name) {
+    case 'memory_write':
+      return <MemoryWriteBubble tc={tc} input={input} />
+    case 'memory_read':
+      return <MemoryReadBubble tc={tc} input={input} />
+    case 'memory_list':
+      return <MemoryListBubble tc={tc} />
+    case 'memory_delete':
+      return <MemoryDeleteBubble tc={tc} input={input} />
+    default:
+      return <ToolBubble tc={tc} />
+  }
+}
+
+/** memory_write */
+function MemoryWriteBubble({ tc, input }: { tc: ToolCallStatus; input: Record<string, any> }) {
+  const [expanded, setExpanded] = useState(false)
+  const isUpdate = tc.result?.includes('已更新')
+  const type = (input.type as string) || 'user'
+  const body = (input.body as string) || ''
+
+  useEffect(() => { if (tc.status === 'done') setExpanded(false) }, [tc.status])
+
+  return (
+    <MemoryCard>
+      <MemoryHeader icon={Bookmark} name={input.name} type={type} status={isUpdate ? '已更新' : '已写入'} />
+      {input.description && (
+        <p className="mt-1 text-[11px] text-muted-foreground/50 leading-relaxed line-clamp-2">{input.description}</p>
+      )}
+      {body && (
+        <>
+          <button
+            className="flex items-center gap-1 mt-1.5 text-[9px] text-muted-foreground/35 hover:text-muted-foreground/55 transition-colors"
+            onClick={() => setExpanded(!expanded)}
+          >
+            <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            {expanded ? '收起' : '预览内容'}
+          </button>
+          {expanded && (
+            <pre className="mt-1 max-h-40 overflow-auto custom-scrollbar rounded border border-border/30 bg-muted/20 p-2 text-[11px] leading-relaxed whitespace-pre-wrap break-all text-muted-foreground/60">
+              {body}
+            </pre>
+          )}
+        </>
+      )}
+    </MemoryCard>
+  )
+}
+
+/** memory_read */
+function MemoryReadBubble({ tc, input }: { tc: ToolCallStatus; input: Record<string, any> }) {
+  const [expanded, setExpanded] = useState(false)
+  const result = tc.result || ''
+  const fmMatch = result.match(/^---\n([\s\S]*?)\n---\n?/)
+  const fm: Record<string, string> = {}
+  if (fmMatch) {
+    for (const line of fmMatch[1].split('\n')) {
+      const kv = line.match(/^(\w+):\s*(.+)/)
+      if (kv) fm[kv[1]] = kv[2].trim()
+    }
+  }
+  const body = fmMatch ? result.slice(fmMatch[0].length).trim() : result
+  const isNotFound = result.startsWith('未找到记忆')
+
+  useEffect(() => { if (tc.status === 'done') setExpanded(false) }, [tc.status])
+
+  if (isNotFound) {
+    return (
+      <MemoryCard muted>
+        <MemoryHeader icon={Brain} name={input.name} status="未找到" />
+      </MemoryCard>
+    )
+  }
+
+  return (
+    <MemoryCard>
+      <MemoryHeader icon={Brain} name={fm.name || input.name} type={fm.type || 'user'} status="已读取" />
+      {/* 元数据副行：description + links */}
+      {(fm.description || (fm.links && fm.links !== '(none)')) && (
+        <div className="flex items-center gap-2 mt-0.5 text-[9px] text-muted-foreground/30 font-mono">
+          {fm.description && <span className="truncate">{fm.description}</span>}
+          {fm.links && fm.links !== '(none)' && <span className="truncate">→ {fm.links}</span>}
+        </div>
+      )}
+      {body && (
+        <>
+          <div className={`mt-1.5 text-[12px] leading-relaxed text-muted-foreground/75 ${expanded ? '' : 'line-clamp-3'}`}>
+            <MarkdownPreview source={body} style={{ fontSize: 12, backgroundColor: 'transparent', padding: 0 }} />
+          </div>
+          {body.split('\n').length > 3 && (
+            <button
+              className="flex items-center gap-1 mt-1 text-[9px] text-muted-foreground/35 hover:text-muted-foreground/55 transition-colors"
+              onClick={() => setExpanded(!expanded)}
+            >
+              <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+              {expanded ? '收起' : '展开全部'}
+            </button>
+          )}
+        </>
+      )}
+    </MemoryCard>
+  )
+}
+
+/** memory_list */
+function MemoryListBubble({ tc }: { tc: ToolCallStatus }) {
+  const result = tc.result || ''
+  const isEmpty = result === '（无记忆）' || !result.trim()
+
+  if (isEmpty) {
+    return (
+      <MemoryCard muted>
+        <MemoryHeader icon={Brain} name="" status="暂无记忆" />
+      </MemoryCard>
+    )
+  }
+
+  const items = result.split('\n').filter(Boolean).map(line => {
+    const m = line.match(/^-\s+(.+?)\s+\(`(.+?)`\):\s*(.*)/)
+    return m ? { title: m[1], slug: m[2], hook: m[3] } : null
+  }).filter(Boolean) as Array<{ title: string; slug: string; hook: string }>
+
+  return (
+    <MemoryCard>
+      <div className="flex items-center gap-2 mb-1.5">
+        <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />
+        <span className="text-[11px] text-muted-foreground/60">{items.length} 条记忆</span>
+      </div>
+      <div className="divide-y divide-border/30">
+        {items.map((item, i) => (
+          <div key={i} className="flex items-center gap-2 py-1.5 first:pt-0 last:pb-0">
+            <span className="text-[11px] font-medium text-muted-foreground/70 truncate max-w-[100px]">{item.title}</span>
+            <span className="font-mono text-[10px] text-muted-foreground/35 truncate">{item.slug}</span>
+            <span className="text-[10px] text-muted-foreground/25 truncate hidden sm:inline flex-1 text-right">— {item.hook}</span>
+          </div>
+        ))}
+      </div>
+    </MemoryCard>
+  )
+}
+
+/** memory_delete */
+function MemoryDeleteBubble({ tc, input }: { tc: ToolCallStatus; input: Record<string, any> }) {
+  const isNotFound = tc.result?.startsWith('未找到记忆')
+  return (
+    <MemoryCard muted={isNotFound}>
+      <MemoryHeader icon={Trash2} name={input.name} status={isNotFound ? '未找到' : '已删除'} />
+    </MemoryCard>
   )
 }
 

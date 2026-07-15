@@ -22,6 +22,7 @@ import { registerShellIpc } from './ipc/shellIpc.js'
 import { registerConfigIpc } from './ipc/configIpc.js'
 import { registerConversationIpc } from './ipc/conversationIpc.js'
 import { registerAiWindowIpc } from './ipc/aiWindowIpc.js'
+import { registerWindowIpc } from './ipc/windowIpc.js'
 import { registerPluginIpc } from './ipc/pluginIpc.js'
 import { registerSkillIpc } from './ipc/skillIpc.js'
 import { registerPermissionIpc } from './ipc/permissionIpc.js'
@@ -33,6 +34,7 @@ if (process.platform === 'darwin') app.setName('Stardust')
 
 let mainWindow: BrowserWindow | null = null
 
+// 图标路径：开发模式用 PNG，打包时 electron-builder 自动将 icns 注入应用包
 const appIconPath = path.join(__dirname, '../public/assets/icons/icon.png')
 const appIcon = fs.existsSync(appIconPath) ? appIconPath : undefined
 
@@ -84,6 +86,7 @@ app.whenReady().then(async () => {
   registerConfigIpc()
   registerConversationIpc()
   registerAiWindowIpc(appIcon)
+  registerWindowIpc()
   registerPluginIpc()
   registerSkillIpc()
   registerPermissionIpc()
@@ -105,10 +108,13 @@ app.whenReady().then(async () => {
       console.warn('[main] ⚠️ 内置 MCP 自动连接失败:', e.message)
     })
 
-    // 全局事件转发：Sidecar 事件 → 渲染进程
-    sidecar.onEvent('event.model.chatChunk', (p) => mainWindow?.webContents.send('sidecar:event', { event: 'event.model.chatChunk', params: p }))
-    sidecar.onEvent('event.model.chatDone', (p) => mainWindow?.webContents.send('sidecar:event', { event: 'event.model.chatDone', params: p }))
-    sidecar.onEvent('event.model.chatError', (p) => mainWindow?.webContents.send('sidecar:event', { event: 'event.model.chatError', params: p }))
+    // 全局事件转发：Sidecar 事件 → 所有渲染进程窗口
+    const broadcast = (event: string, params: any) => {
+      BrowserWindow.getAllWindows().forEach(w => w.webContents.send('sidecar:event', { event, params }))
+    }
+    sidecar.onEvent('event.model.chatChunk', (p) => broadcast('event.model.chatChunk', p))
+    sidecar.onEvent('event.model.chatDone', (p) => broadcast('event.model.chatDone', p))
+    sidecar.onEvent('event.model.chatError', (p) => broadcast('event.model.chatError', p))
   } catch (e: any) {
     console.error('[main] ⚠️ Rust Sidecar 启动失败，回退到 Node.js 模式:', e.message)
   }

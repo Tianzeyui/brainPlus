@@ -17,14 +17,14 @@ export function SkillDetailDialog({ skill, open, onOpenChange }: SkillDetailDial
   const [selectedFile, setSelectedFile] = useState('SKILL.md')
   const [fileContent, setFileContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [fileExpanded, setFileExpanded] = useState(false)
+  const [fileExpanded, setFileExpanded] = useState(true)
 
   useEffect(() => {
     if (!skill || !open) return
     const defaultFile = skill.fileList.includes('SKILL.md') ? 'SKILL.md' : skill.fileList[0]
     setSelectedFile(defaultFile || '')
     setActiveTab('files')
-    setFileExpanded(false)
+    setFileExpanded(true)
   }, [skill, open])
 
   useEffect(() => {
@@ -33,7 +33,7 @@ export function SkillDetailDialog({ skill, open, onOpenChange }: SkillDetailDial
       return
     }
     setLoading(true)
-    setFileExpanded(false)
+    setFileExpanded(true)
     loadSkillFile(skill.id, selectedFile)
       .then(content => setFileContent(content))
       .catch(() => setFileContent(null))

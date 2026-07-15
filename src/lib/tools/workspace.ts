@@ -202,11 +202,11 @@ export async function registerWorkspaceTools(tools: ToolMap) {
 
       if (needsConvert && window.electronAPI?.file) {
         const convertResult = await window.electronAPI.file.convert(resolvedPath)
-        if (convertResult.success && convertResult.content) {
-          const total = convertResult.content.length
+        if (convertResult.success && convertResult.result) {
+          const total = convertResult.result.length
           const off = Math.max(0, args.offset || 0)
           const len = Math.min(args.length || 8000, 10000)
-          const slice = convertResult.content.slice(off, off + len)
+          const slice = convertResult.result.slice(off, off + len)
           const tail = total > off + len ? `\n\n--- 第 ${off}-${off + len} / ${total} 字符 ---` : `\n\n--- ${total} 字符（已读完）---`
           return slice + tail
         }

@@ -72,7 +72,7 @@ function saveProjectId(pid: string | null) {
 function buildHistory(
   messages: UIMessage[],
   userMsg: UIMessage,
-  finalContent: string,
+  finalContent: string | any[],
 ): ChatMessageType[] {
   const allMsgs = [...messages, userMsg]
   const result: ChatMessageType[] = []
@@ -544,7 +544,7 @@ export function ChatPage() {
       try {
         const r = await window.electronAPI!.file.convert(att.path)
         setAttachments(prev => prev.map(a =>
-          a.id === att.id ? { ...a, status: r.success && r.content ? 'done' as const : 'error' as const, content: r.content, error: r.error } : a
+          a.id === att.id ? { ...a, status: r.success && r.result ? 'done' as const : 'error' as const, content: r.result, error: r.error } : a
         ))
       } catch (e: any) {
         setAttachments(prev => prev.map(a => a.id === att.id ? { ...a, status: 'error' as const, error: e.message } : a))
@@ -566,12 +566,115 @@ export function ChatPage() {
     setDragOver(false)
     const files = Array.from(e.dataTransfer.files)
     if (files.length === 0) return
-    // Electron 环境下 File 对象有 path 属性
-    const paths = files.map(f => (f as any).path || f.name).filter(Boolean)
+    const paths: string[] = []
+    for (const f of files) {
+      // Electron 32+ 用 webUtils，旧版回退 f.path
+      const p = window.electronAPI?.file?.getPathForFile?.(f as any) ?? (f as any).path
+      if (p) { paths.push(p) }
+      else { console.warn('[handleDrop] 文件无路径，跳过:', f.name, 'size:', f.size, 'type:', f.type) }
+    }
     if (paths.length > 0) processFiles(paths)
   }, [processFiles])
 
   const removeAttachment = useCallback((id: string) => setAttachments(prev => prev.filter(a => a.id !== id)), [])
+
+  // 粘贴图片/文件
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items
+    const files = e.clipboardData?.files
+
+    // 收集剪贴板图片（截图等，items 有但 files 可能为空）
+    const clipboardImages: { blob: File; name: string }[] = []
+    // 收集文件路径
+    const filePaths: string[] = []
+
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+
+        // 图片类型：截图、复制图片
+        if (item.type.startsWith('image/')) {
+          const blob = item.getAsFile()
+          if (blob) clipboardImages.push({ blob, name: `剪贴板图片_${i + 1}.png` })
+          continue
+        }
+
+        // macOS Finder 复制：kind === 'file' 或 type === 'Files'
+        if (item.kind === 'file') {
+          const f = item.getAsFile() as any
+          if (f) {
+            const p = window.electronAPI?.file?.getPathForFile?.(f) ?? f.path
+            if (p) { filePaths.push(p); continue }
+          }
+        }
+      }
+    }
+
+    // Fallback: files 列表（Windows/Linux 或部分 Electron 版本）
+    if (files) {
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i] as any
+        const p = window.electronAPI?.file?.getPathForFile?.(f) ?? f.path
+        if (p && !filePaths.includes(p)) filePaths.push(p)
+      }
+    }
+
+    // Fallback: macOS text/uri-list（Finder 复制文件的经典格式）
+    if (filePaths.length === 0) {
+      try {
+        const uriList = e.clipboardData?.getData('text/uri-list')
+        if (uriList) {
+          const uris = uriList.split('\n').filter(s => s.trim() && !s.startsWith('#'))
+          for (const uri of uris) {
+            try {
+              const url = new URL(uri.trim())
+              if (url.protocol === 'file:') filePaths.push(decodeURIComponent(url.pathname))
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+
+    // 既没有图片也没有文件路径 → 走默认粘贴文本
+    if (clipboardImages.length === 0 && filePaths.length === 0) return
+
+    e.preventDefault()
+
+    // 文件路径走 processFiles 管道（自动判断图片/文档、转换）
+    if (filePaths.length > 0) {
+      processFiles(filePaths)
+    }
+
+    // 排除已通过 processFiles 处理的（有 path 的图片文件）
+    const unhandledImages = clipboardImages.filter(img => {
+      const imgFile = img.blob as any
+      return !imgFile.path || !filePaths.includes(imgFile.path)
+    })
+
+    // 剪贴板图片转 data URL
+    if (unhandledImages.length > 0) {
+      const atts: Attachment[] = []
+      let done = 0
+      unhandledImages.forEach(({ blob, name }) => {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const dataUrl = reader.result as string
+          const mime = blob.type || 'image/png'
+          const ext = mime.split('/')[1] || 'png'
+          atts.push({
+            id: 'att_' + Math.random().toString(36).slice(2, 8),
+            name,
+            path: dataUrl,
+            type: 'image' as const,
+            status: 'done' as const,
+          })
+          done++
+          if (done === unhandledImages.length) setAttachments(prev => [...prev, ...atts])
+        }
+        reader.readAsDataURL(blob)
+      })
+    }
+  }, [processFiles])
 
   // 工作区目录浏览
   const loadWorkspaceDir = useCallback(async (dirPath: string) => {
@@ -703,7 +806,7 @@ export function ChatPage() {
       }
 
       const history: ChatMessageType[] = buildHistory(
-        messages, userMsg, resolvedContent as string,
+        messages, userMsg, resolvedContent,
       )
 
       let streamed = ''
@@ -958,7 +1061,7 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
       setAttachments(prev => prev.map(a => a.id === att.id ? { ...a, status: 'converting' } : a))
       try {
         const r = await window.electronAPI.file.convert(file.path)
-        setAttachments(prev => prev.map(a => a.id === att.id ? { ...a, status: r.success && r.content ? 'done' : 'error', content: r.content, error: r.error } : a))
+        setAttachments(prev => prev.map(a => a.id === att.id ? { ...a, status: r.success && r.result ? 'done' : 'error', content: r.result, error: r.error } : a))
       } catch (e: any) { setAttachments(prev => prev.map(a => a.id === att.id ? { ...a, status: 'error', error: e.message } : a)) }
     }
   }, [input])
@@ -1054,6 +1157,7 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
             if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
             if (e.key === 'Enter' && e.shiftKey) return
           }}
+          onPaste={handlePaste}
           disabled={!activeModel || !!askUser}
         />
         <div className="flex items-center gap-1 px-2 pb-1.5">

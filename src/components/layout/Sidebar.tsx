@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import {
   Bot, MessageSquare, Package, FolderOpen, FolderKanban, BookOpen, Lightbulb, BarChart3, Puzzle, Blocks,
-  Settings, LogOut, PanelLeftClose, PanelLeftOpen, User, ChevronDown, Bell, XCircle, Info, AlertTriangle, AlertCircle, ArrowRight,
+  Settings, LogOut, ChevronLeft, ChevronRight, User, ChevronDown, Bell, XCircle, Info, AlertTriangle, AlertCircle, ArrowRight, ExternalLink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -9,6 +9,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useNotifications } from '@/contexts/NotificationContext'
 import { pluginSystem } from '@/lib/pluginSystem'
 import type { NavItemDef } from '@/lib/pluginTypes'
+import { ContextMenu } from '@/components/ui/contextMenu'
+import type { ContextMenuItem } from '@/components/ui/contextMenu'
 
 import { initCorePlugins } from '@/lib/corePlugins'
 
@@ -47,6 +49,14 @@ export function Sidebar({ activeNav, onNavChange, collapsed, onToggleCollapse, o
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showNotifInMenu, setShowNotifInMenu] = useState(false)
 
+  // 右键菜单状态
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null)
+
+  const handleOpenInNewWindow = (navId: string, label: string) => {
+    const api = (window as any).electronAPI
+    api?.window?.openNav?.(navId, label)
+  }
+
   return (
     <aside
       className={cn(
@@ -55,16 +65,14 @@ export function Sidebar({ activeNav, onNavChange, collapsed, onToggleCollapse, o
       )}
     >
       {/* 顶部：Logo + 折叠按钮 */}
-      <div className={cn('mb-6 flex items-center', collapsed ? 'flex-col gap-2' : 'justify-between')}>
+      <div className={cn('flex items-center', collapsed ? 'flex-col gap-3 mb-3' : 'justify-between mb-6')}>
         <div className={cn('flex items-center gap-2', collapsed && 'flex-col')}>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
-            <img src="/assets/icons/iconWhite.svg" alt="Stardust" className="h-7 w-7" />
-          </div>
+          <img src="/assets/icons/icon.svg" alt="Stardust" className="h-6 w-6 shrink-0 ml-2" />
           {!collapsed && <span className="text-lg font-bold tracking-tight">Stardust</span>}
         </div>
         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
           onClick={onToggleCollapse} title={collapsed ? '展开侧边栏' : '收起侧边栏'}>
-          {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
       </div>
 
@@ -78,7 +86,29 @@ export function Sidebar({ activeNav, onNavChange, collapsed, onToggleCollapse, o
             <Button key={item.id} variant={isActive ? 'default' : 'ghost'}
               size={collapsed ? 'icon' : 'default'}
               className={cn('transition-all relative', collapsed ? 'h-10 w-10' : 'justify-start gap-3', !isActive && 'text-muted-foreground hover:text-foreground')}
-              onClick={() => { onCloseSettings(); onNavChange(item.id) }} title={collapsed ? (isPlugin ? `${item.label}（插件）` : item.label) : undefined}>
+              onClick={() => { onCloseSettings(); onNavChange(item.id) }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                setCtxMenu({
+                  x: e.clientX, y: e.clientY,
+                  items: [
+                    {
+                      label: '在新窗口打开',
+                      icon: <ExternalLink className="h-3.5 w-3.5" />,
+                      shortcut: '⌘+点击',
+                      onClick: () => handleOpenInNewWindow(item.id, item.label),
+                    },
+                  ],
+                })
+              }}
+              onMouseDown={(e) => {
+                // 中键点击 或 Cmd/Ctrl + 左键 → 新窗口打开
+                if (e.button === 1 || (e.button === 0 && (e.metaKey || e.ctrlKey))) {
+                  e.preventDefault()
+                  handleOpenInNewWindow(item.id, item.label)
+                }
+              }}
+              title={collapsed ? (isPlugin ? `${item.label}（插件）— 右键或中键新窗口打开` : `${item.label} — 右键或中键新窗口打开`) : undefined}>
               <IconComponent className="h-5 w-5 shrink-0" />
               {!collapsed && (
                 <>
@@ -214,6 +244,11 @@ export function Sidebar({ activeNav, onNavChange, collapsed, onToggleCollapse, o
       </div>
 
       {showUserMenu && <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />}
+
+      {/* 右键菜单 */}
+      {ctxMenu && (
+        <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={ctxMenu.items} onClose={() => setCtxMenu(null)} />
+      )}
     </aside>
   )
 }
