@@ -1,8 +1,7 @@
+import { useState } from 'react'
+import TextType from '@/components/ui/TextType'
+
 interface WelcomeHeroProps {
-  /** 当前模型名，null/undefined 表示未选择 */
-  modelName?: string | null
-  /** 是否已配置至少一个模型 */
-  hasModels: boolean
   /** 外层容器扩展样式 */
   className?: string
 }
@@ -14,20 +13,35 @@ function getGreeting(): string {
   return '晚上好'
 }
 
-export default function WelcomeHero({ modelName, hasModels, className = '' }: WelcomeHeroProps) {
-  const modelText = !hasModels
-    ? '请先在设置中配置模型'
-    : modelName
-      ? `当前模型: ${modelName}`
-      : '选择一个模型'
+export default function WelcomeHero({ className = '' }: WelcomeHeroProps) {
+  const [showSecondLine, setShowSecondLine] = useState(false)
+  const [hideCursor, setHideCursor] = useState(false)
 
   return (
     <div className={`flex flex-col items-center gap-2 ${className}`}>
-      <h1 className="text-4xl font-bold tracking-tight text-foreground/90">
-        {getGreeting()}
-      </h1>
-      <p className="text-xl text-muted-foreground/70">有什么可以帮你的？</p>
-      <p className="text-xs text-muted-foreground/50 mt-1">{modelText}</p>
+      <div className="h-14 flex items-center">
+        <TextType
+          text={[getGreeting()]}
+          typingSpeed={80}
+          loop={false}
+          showCursor={false}
+          onSentenceComplete={() => setShowSecondLine(true)}
+          className="text-4xl font-bold tracking-tight text-foreground/90"
+        />
+      </div>
+      <div className="h-7 flex items-center">
+        {showSecondLine && (
+          <TextType
+            text={['有什么可以帮你的？']}
+            typingSpeed={80}
+            loop={false}
+            showCursor={!hideCursor}
+            cursorCharacter="|"
+            onSentenceComplete={() => setHideCursor(true)}
+            className="text-xl text-muted-foreground/70"
+          />
+        )}
+      </div>
     </div>
   )
 }

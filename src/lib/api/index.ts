@@ -116,7 +116,9 @@ export async function generateText(options: GenerateTextOptions): Promise<{
 
   // OpenAI 兼容：非流式 fetch
   const baseUrl = (config.baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')
-  const url = `${baseUrl}/v1/chat/completions`
+  const url = baseUrl.endsWith('/v1')
+    ? `${baseUrl}/chat/completions`
+    : `${baseUrl}/v1/chat/completions`
 
   const messages: Array<{ role: string; content: string }> = []
   if (systemPrompt) messages.push({ role: 'system', content: systemPrompt })

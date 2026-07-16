@@ -37,6 +37,7 @@ import {
 } from '@/types/chat'
 import { TokenUsageBar } from './TokenUsageBar'
 import WelcomeHero from './WelcomeHero'
+import { getStrandColors } from './strandColors'
 import Strands from './Strands'
 import { addTrace } from '@/lib/traceStore'
 
@@ -998,7 +999,7 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
       }, {
         abortSignal: controller.signal,
         autoMode,
-        modelOverride: usedModel !== activeModel ? { provider: usedModel.name, modelId: usedModel.selectedModel } : undefined,
+        modelOverride: { provider: usedModel.name, modelId: usedModel.selectedModel, apiKey: usedModel.apiKey, baseUrl: usedModel.baseUrl },
         forceCompression: forceCompressRef.current ? true : undefined,
         memoryInjection: await getInjectionText() ?? undefined,
         thinkingBudgetTokens: thinkingBudget(thinkingLevel),
@@ -1387,15 +1388,12 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
           <div className="h-44" />
           {/* 问候文字 — 压住丝带上边缘 */}
           <div className="relative z-10 mb-[-280px]">
-            <WelcomeHero
-              modelName={activeModel?.selectedModel}
-              hasModels={configuredModels.length > 0}
-            />
+            <WelcomeHero />
           </div>
           {/* 丝带装饰带 */}
-          <div className="h-[600px] w-full shrink-0 relative pointer-events-none">
+          <div className="h-[600px] w-full shrink-0 relative pointer-events-none translate-y-8">
             <Strands
-              colors={['#9CA3AF', '#6B7280', '#374151', '#1F2937']}
+              colors={getStrandColors(activeModel?.selectedModel)}
               count={3}
               speed={0.2}
               amplitude={0.7}
@@ -1411,7 +1409,7 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
             />
           </div>
           {/* 输入框 — 压住丝带下边缘 */}
-          <div className="relative z-10 w-full max-w-2xl shrink-0 -mt-[310px]">
+          <div className="relative z-10 w-full max-w-2xl shrink-0 -mt-[290px]">
             {inputArea}
           </div>
           {/* 底部留白 */}

@@ -172,7 +172,9 @@ export async function* streamOpenAICompat(
   thinkingBudgetTokens?: number,
 ): AsyncGenerator<StreamEvent> {
   const baseUrl = (config.baseUrl || 'https://api.deepseek.com').replace(/\/+$/, '')
-  const url = `${baseUrl}/v1/chat/completions`
+  const url = baseUrl.endsWith('/v1')
+    ? `${baseUrl}/chat/completions`
+    : `${baseUrl}/v1/chat/completions`
 
   const openaiMessages = convertMessages(messages, systemPrompt)
   const openaiTools = convertTools(tools)
