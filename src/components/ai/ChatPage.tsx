@@ -28,7 +28,7 @@ import { setSandboxOutputDir } from '@/lib/tools/sandbox'
 import { setWorkspaceRoots } from '@/lib/tools/workspace'
 import { setGitWorkspaceRoot } from '@/lib/tools/git'
 import { setTermWorkspaceRoot } from '@/lib/tools/terminal'
-import { killAll as killAllTerminals } from '@/lib/terminalManager'
+import { killAll as killAllTerminals, initStreamListener, destroyStreamListener } from '@/lib/terminalManager'
 import { messageReducer, nextMsgId, type MessageAction } from './chatReducer'
 import {
   type ToolCallStatus, type UIMessage, type ConsoleLine,
@@ -431,7 +431,7 @@ export function ChatPage() {
     return () => setAgentUIHandler(null)
   }, [])
 
-  // 终端 UI 事件
+  // 终端 UI 事件 + 流式输出监听
   useEffect(() => {
     setTerminalUIHandler((event: any) => {
       if (event.type === 'terminal_created') {
@@ -440,7 +440,11 @@ export function ChatPage() {
         dispatch({ type: 'UPDATE_TERMINAL', terminal: event.terminal })
       }
     })
-    return () => { setTerminalUIHandler(() => {}) }
+    initStreamListener()
+    return () => {
+      setTerminalUIHandler(() => {})
+      destroyStreamListener()
+    }
   }, [])
 
   // 文件操作 UI 事件（用 DOM 事件，避免模块级变量 HMR 后丢失）

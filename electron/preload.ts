@@ -228,12 +228,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   terminal: {
-    execute: (id: string, command: string, cwd: string) =>
-      ipcRenderer.invoke('terminal:execute', id, command, cwd),
-    spawn: (id: string, command: string, cwd: string) =>
-      ipcRenderer.invoke('terminal:spawn', id, command, cwd),
+    execute: (id: string, command: string, cwd: string, timeout?: number, env?: Record<string, string>) =>
+      ipcRenderer.invoke('terminal:execute', id, command, cwd, timeout, env),
+    spawn: (id: string, command: string, cwd: string, timeout?: number, env?: Record<string, string>) =>
+      ipcRenderer.invoke('terminal:spawn', id, command, cwd, timeout, env),
     check: (id: string) => ipcRenderer.invoke('terminal:check', id),
     kill: (id: string) => ipcRenderer.invoke('terminal:kill', id),
+    interrupt: (id: string) => ipcRenderer.invoke('terminal:interrupt', id),
     onOutput: (cb: (data: { id: string; stdout: string; stderr: string; done: boolean; exitCode?: number }) => void) => {
       const handler = (_event: any, data: any) => cb(data)
       ipcRenderer.on('terminal:output', handler)

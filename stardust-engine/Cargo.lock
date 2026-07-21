@@ -1596,6 +1596,7 @@ dependencies = [
  "futures",
  "humantime",
  "ignore",
+ "libc",
  "llama-cpp-2",
  "open",
  "portable-pty",

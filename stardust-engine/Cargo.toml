@@ -48,6 +48,7 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 # 系统工具
 dirs = "5"
 open = "5"
+libc = "0.2"
 
 # 本地模型推理 (llama.cpp)
 llama-cpp-2 = "0.1"

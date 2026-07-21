@@ -85,7 +85,7 @@ async fn main() {
         let request: protocol::Request = match serde_json::from_str(&line) {
             Ok(req) => req,
             Err(e) => {
-                tracing::warn!("JSON 解析失败: {e}");
+                tracing::warn!("JSON 解析失败: {e} | 原始行: {line}", line = line);
                 let err = serde_json::json!({
                     "jsonrpc": "2.0", "id": null,
                     "error": { "code": -32700, "message": format!("Parse error: {e}") }

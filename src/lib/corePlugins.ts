@@ -4,6 +4,8 @@
 import { pluginSystem } from './pluginSystem'
 import type { Plugin } from './pluginTypes'
 
+// ========== 核心插件定义 ==========
+
 const coreChat: Plugin = {
   manifest: { id: 'chat', name: '助手', version: '1.0.0', description: '', icon: 'Bot', navOrder: 10, enabled: true },
   register(ctx) {
@@ -31,7 +33,6 @@ const coreSkills: Plugin = {
 const coreNotifications: Plugin = {
   manifest: { id: 'notifications', name: '通知', version: '1.0.0', description: '', icon: 'Bell', navOrder: 90, enabled: true },
   register(ctx) {
-    // 通知不在左侧菜单显示，通过用户菜单的"查看全部"进入
     ctx.registerRoute('notifications', () => import('@/components/notifications/NotificationsPage'))
   },
 }

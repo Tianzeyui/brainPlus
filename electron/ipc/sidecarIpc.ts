@@ -57,13 +57,27 @@ export function registerSidecarIpc(): void {
   forwardToSidecar('git:exec', 'git.exec', mapCwdArgs)
 
   // ==================== Terminal → Rust Sidecar ====================
-  forwardToSidecar('terminal:execute', 'terminal.exec',
-    (args) => ({ id: args[0], command: args[1], cwd: args[2] }),
-  )
-  forwardToSidecar('terminal:spawn', 'terminal.spawn',
-    (args) => ({ id: args[0], command: args[1], cwd: args[2] }),
-  )
+  // terminal:execute 需要动态超时，不能使用 forwardToSidecar 的默认 30s
+  ipcMain.handle('terminal:execute', async (_event, id: string, command: string, cwd: string, timeout?: number, env?: Record<string, string>) => {
+    try {
+      const effectiveTimeout = ((timeout || 120) + 1) * 1000 // 命令超时 + 1s（Rust 侧 kill+wait 开销）
+      const result = await getSidecar().call('terminal.exec', { id, command, cwd, timeout, env }, effectiveTimeout)
+      return result
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  })
+  // terminal:spawn 应瞬间返回（仅 spawn 进程），但也用动态超时防止边缘情况
+  ipcMain.handle('terminal:spawn', async (_event, id: string, command: string, cwd: string, timeout?: number, env?: Record<string, string>) => {
+    try {
+      const result = await getSidecar().call('terminal.spawn', { id, command, cwd, timeout, env }, 10000)
+      return result
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  })
   forwardToSidecar('terminal:kill', 'terminal.kill', (args) => ({ id: args[0] }))
+  forwardToSidecar('terminal:interrupt', 'terminal.interrupt', (args) => ({ id: args[0] }))
   forwardToSidecar('terminal:check', 'terminal.check', (args) => ({ id: args[0] }))
   // PTY
   forwardToSidecar('terminal:ptySpawn', 'terminal.ptySpawn',

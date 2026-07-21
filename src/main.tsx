@@ -35,3 +35,15 @@ root.render(
     </ToastProvider>
   </React.StrictMode>,
 )
+
+// 代码块语言标签：给所有 pre[class*="language-"] 注入 data-lang
+const LANG_RE = /language-(\S+)/
+function stampCodeLangs() {
+  document.querySelectorAll('pre[class*="language-"]').forEach((pre) => {
+    if (pre.hasAttribute('data-lang')) return
+    const m = pre.className.match(LANG_RE)
+    if (m) pre.setAttribute('data-lang', m[1])
+  })
+}
+stampCodeLangs()
+new MutationObserver(stampCodeLangs).observe(document.body, { childList: true, subtree: true })

@@ -73,6 +73,7 @@ export interface TerminalStatus {
   exitCode?: number
   startTime: number
   endTime?: number
+  timeout?: number   // 超时秒数
 }
 
 /** 压缩事件数据 */

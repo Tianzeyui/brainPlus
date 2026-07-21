@@ -175,6 +175,28 @@ export interface ElectronAPI {
     fetch: (url: string, opts?: { method?: string; headers?: Record<string, string>; body?: string; timeout?: number }) =>
       Promise<{ success: boolean; error?: string; data?: string; status?: number }>
   }
+  terminal?: {
+    execute: (id: string, command: string, cwd: string, timeout?: number, env?: Record<string, string>) =>
+      Promise<{ success: boolean; stdout?: string; stderr?: string; exitCode?: number; error?: string }>
+    spawn: (id: string, command: string, cwd: string, timeout?: number, env?: Record<string, string>) =>
+      Promise<{ success: boolean; pid?: number; error?: string }>
+    check: (id: string) => Promise<{ found: boolean; done?: boolean; pid?: number; stdout?: string; stderr?: string; exitCode?: number }>
+    kill: (id: string) => Promise<{ success: boolean; error?: string }>
+    interrupt: (id: string) => Promise<{ success: boolean; error?: string }>
+    ptySpawn?: (id: string, command: string, cwd: string) => Promise<{ success: boolean; pid?: number; error?: string }>
+    ptyWrite?: (id: string, data: string) => Promise<{ success: boolean; error?: string }>
+    ptyResize?: (id: string, cols: number, rows: number) => Promise<{ ok: boolean }>
+    onOutput?: (cb: (data: { id: string; stdout: string; stderr: string; done: boolean; exitCode?: number }) => void) => () => void
+    onPtyOutput?: (cb: (data: { id: string; data: string; done?: boolean; exitCode?: number }) => void) => () => void
+  }
+  perm?: {
+    check: (workspaceRoot: string, type: string, value: string) => Promise<boolean>
+    grant: (workspaceRoot: string, type: string, pattern: string) => Promise<void>
+  }
+  sidecar?: {
+    call: (method: string, params?: any, timeout?: number) => Promise<any>
+    onEvent: (eventName: string, cb: (params: any) => void) => () => void
+  }
 }
 
 declare global {

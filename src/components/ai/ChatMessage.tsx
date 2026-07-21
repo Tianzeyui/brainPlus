@@ -4,6 +4,7 @@ import MarkdownPreview from '@uiw/react-markdown-preview'
 import type { UIMessage, ToolCallStatus, MessageAttachment, AgentToolCallEntry, AgentTimelineItem, TerminalStatus } from '@/types/chat'
 import { useAuth } from '@/contexts/AuthContext'
 import type { FileOpRequest } from '@/lib/fileOpManager'
+import { confirm as confirmTerminal, reject as rejectTerminal, killTerminal } from '@/lib/terminalManager'
 
 /** 工具结果格式化：JSON 结果包进代码块，纯文本保持原样 */
 function formatToolResult(result: string, type: string): string {
@@ -46,6 +47,7 @@ const TOOL_STYLE: Record<string, {
 const HIDDEN_TOOLS = new Set([
   'run_terminal',
   'run_terminal_input',
+  'check_terminal',
   'ask_user',
   'update_task_list',
   'show_progress',
@@ -57,18 +59,9 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
     return (
       <TerminalBubble
         ts={msg.terminal}
-        onConfirm={async (id, persist) => {
-          const { confirm } = await import('@/lib/terminalManager')
-          confirm(id, persist)
-        }}
-        onReject={async (id) => {
-          const { reject } = await import('@/lib/terminalManager')
-          reject(id)
-        }}
-        onCancel={async (id) => {
-          const { killTerminal } = await import('@/lib/terminalManager')
-          await killTerminal(id)
-        }}
+        onConfirm={(id, persist) => { confirmTerminal(id, persist) }}
+        onReject={(id) => { console.log('[ChatMessage] onReject 触发 id=', id); rejectTerminal(id) }}
+        onCancel={(id) => { killTerminal(id) }}
       />
     )
   }
@@ -84,6 +77,7 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
     return (
       <div className="flex flex-col gap-2">
         {batch.map(tc => {
+          if (tc.name === 'check_terminal') return <CheckTerminalBubble key={tc.id} tc={tc} />
           if (HIDDEN_TOOLS.has(tc.name)) return null
           if (tc.name === 'web_search') return <SearchBubble key={tc.id} tc={tc} />
           if (tc.name === 'web_fetch') return <FetchBubble key={tc.id} tc={tc} />
@@ -96,6 +90,7 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
   }
 
   if (msg.role === 'tool' && msg.toolCall) {
+    if (msg.toolCall.name === 'check_terminal') return <CheckTerminalBubble tc={msg.toolCall} />
     if (HIDDEN_TOOLS.has(msg.toolCall.name)) return null
     // 搜索/抓取用自定义样式
     if (msg.toolCall.name === 'web_search') return <SearchBubble tc={msg.toolCall} />
@@ -167,9 +162,7 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
                 <div className="space-y-2">
                   {msg.agentTimeline.map((item, i) =>
                     item.type === 'text' ? (
-                      <MarkdownPreview key={i}
-                        source={item.content}
-                        style={{ fontSize: 14, backgroundColor: 'transparent', overflowWrap: 'break-word', wordBreak: 'break-word' }}
+                      <MarkdownPreview key={i}                        source={item.content}                        style={{ fontSize: 14, backgroundColor: 'transparent', overflowWrap: 'break-word', wordBreak: 'break-word' }}
                       />
                     ) : (
                       <AgentToolCallItem key={i} tc={{ name: item.name, brief: item.brief, status: item.status, output: item.output }} />
@@ -339,8 +332,7 @@ function ToolBubble({ tc }: { tc: ToolCallStatus }) {
               </button>
               {expanded && (
                 <div className="mt-1 max-h-60 overflow-auto custom-scrollbar rounded border border-border max-w-full">
-                  <MarkdownPreview
-                    source={formatToolResult(tc.result!, tc.type)}
+                  <MarkdownPreview source={formatToolResult(tc.result!, tc.type)}
                     style={{ fontSize: 12, padding: '4px 8px', backgroundColor: 'transparent' }}
                   />
                 </div>
@@ -649,8 +641,7 @@ function ThinkingBlock({ thinking, loading, content, duration }: { thinking: str
       </button>
       {expanded && (
         <div className="py-1 max-h-64 overflow-auto custom-scrollbar">
-          <MarkdownPreview
-            source={thinking}
+          <MarkdownPreview source={thinking}
             style={{ fontSize: 12, backgroundColor: 'transparent', color: 'var(--muted-foreground)', opacity: loading ? 0.7 : 0.5 }}
           />
         </div>
@@ -874,6 +865,47 @@ function SearchBubble({ tc }: { tc: ToolCallStatus }) {
 }
 
 /** 抓取气泡 */
+/** check_terminal 专用气泡 */
+function CheckTerminalBubble({ tc }: { tc: ToolCallStatus }) {
+  const text = tc.result || ''
+  const running = text.includes('[...]') || text.includes('执行中')
+  const done = text.includes('[OK]') || text.includes('已完成')
+  const err = text.includes('[ERR]') || text.includes('失败')
+  const StatusIcon = running ? Loader2 : done ? Check : err ? X : Terminal
+  const iconClass = running ? 'animate-spin text-yellow-400' : done ? 'text-green-400' : err ? 'text-red-400' : 'text-zinc-400'
+  const statusLabel = running ? '执行中' : done ? '已完成' : err ? '失败' : ''
+  const idMatch = text.match(/term_\w+/)
+  const termId = idMatch ? idMatch[0] : ''
+  const exitMatch = text.match(/exit\s+(-?\d+)/)
+  const exitCode = exitMatch ? exitMatch[1] : ''
+  const pidMatch = text.match(/PID:\s*(\d+)/)
+  const pid = pidMatch ? pidMatch[1] : ''
+
+  return (
+    <div className="flex gap-3 w-full">
+      <div className="min-w-0 flex-1">
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs">
+          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+            <Terminal className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
+            {termId && <span className="font-mono text-[11px] text-zinc-400">{termId}</span>}
+            {statusLabel && (
+              <span className="inline-flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                <StatusIcon className={`h-3 w-3 ${iconClass}`} />
+                {statusLabel}
+              </span>
+            )}
+            {exitCode && <span className="text-[10px] text-zinc-500 font-mono">exit {exitCode}</span>}
+            {pid && <span className="text-[10px] text-zinc-600">PID {pid}</span>}
+          </div>
+          <pre className="max-h-64 overflow-auto custom-scrollbar rounded bg-zinc-950 px-2 py-1.5 font-mono text-[10px] leading-relaxed whitespace-pre-wrap break-all text-zinc-400">
+            {text}
+          </pre>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function FetchBubble({ tc }: { tc: ToolCallStatus }) {
   const url = typeof tc.input === 'object' && tc.input ? (tc.input as any).url || '' : ''
   const [expanded, setExpanded] = useState(tc.status === 'running')
@@ -1041,8 +1073,9 @@ export function TerminalBubble({ ts, onConfirm, onReject, onCancel }: {
                 <Check className="h-3 w-3" />总是允许
               </button>
               <button className="flex items-center gap-1 rounded bg-zinc-700 px-2.5 py-1 text-[10px] text-zinc-300 hover:bg-zinc-600 transition-colors"
-                onClick={() => onReject(ts.id)}>
-                <X className="h-3 w-3" />拒绝
+                onClick={() => { console.log('REJECT CLICKED', ts.id); onReject(ts.id) }}
+                onMouseDown={() => console.log('REJECT MOUSEDOWN')}>
+                <X className="h-3 w-3 pointer-events-none" />拒绝
               </button>
             </div>
           )}
@@ -1067,7 +1100,72 @@ export function TerminalBubble({ ts, onConfirm, onReject, onCancel }: {
   )
 }
 
-/** 终端输出 — 用 useEffect + RAF 自动跟底，避免 ref callback 每帧触发布局 */
+// ====== ANSI → HTML 转换 ======
+
+const ANSI_COLORS: Record<number, string> = {
+  30: '#d4d4d8', 31: '#f87171', 32: '#4ade80', 33: '#fbbf24',
+  34: '#60a5fa', 35: '#c084fc', 36: '#22d3ee', 37: '#e4e4e7',
+  90: '#a1a1aa', 91: '#fca5a5', 92: '#86efac', 93: '#fde68a',
+  94: '#93c5fd', 95: '#d8b4fe', 96: '#67e8f9', 97: '#f4f4f5',
+}
+
+const ANSI_BG: Record<number, string> = {
+  40: '#27272a', 41: '#7f1d1d', 42: '#14532d', 43: '#713f12',
+  44: '#1e3a5f', 45: '#4a1d6b', 46: '#164e63', 47: '#3f3f46',
+  100: '#52525b', 101: '#991b1b', 102: '#166534', 103: '#854d0e',
+  104: '#1e40af', 105: '#6b21a8', 106: '#155e75', 107: '#52525b',
+}
+
+/** 将 ANSI escape code 转为 HTML span 标签 */
+function ansiToHtml(text: string): string {
+  if (!text) return ''
+  // 先转义 HTML
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+
+  let result = ''
+  let i = 0
+  const openTags: string[] = []
+
+  while (i < escaped.length) {
+    // 检测 ANSI escape: \x1b[...m
+    if (escaped.charCodeAt(i) === 0x1b && escaped[i + 1] === '[') {
+      const end = escaped.indexOf('m', i)
+      if (end === -1) { result += escaped[i]; i++; continue }
+      const codes = escaped.slice(i + 2, end).split(';').map(Number)
+      i = end + 1
+
+      // 关闭所有打开的标签
+      while (openTags.length) result += openTags.pop()
+
+      // 根据 code 生成新标签
+      let styles: string[] = []
+      for (const code of codes) {
+        if (code === 0 || code === 39) { styles = []; continue } // reset
+        if (code === 1) styles.push('font-weight:bold')
+        else if (code === 3) styles.push('font-style:italic')
+        else if (code === 4) styles.push('text-decoration:underline')
+        else if (ANSI_COLORS[code]) styles.push(`color:${ANSI_COLORS[code]}`)
+        else if (ANSI_BG[code]) styles.push(`background-color:${ANSI_BG[code]}`)
+      }
+      if (styles.length > 0) {
+        const tag = `<span style="${styles.join(';')}">`
+        result += tag
+        openTags.push('</span>')
+      }
+    } else {
+      result += escaped[i]
+      i++
+    }
+  }
+  // 关闭所有未关闭的标签
+  while (openTags.length) result += openTags.pop()
+  return result
+}
+
+/** 终端输出 — ANSI 渲染 + 自动跟底 */
 function TerminalOutput({ stdout, stderr }: { stdout: string; stderr?: string }) {
   const ref = useRef<HTMLPreElement>(null)
   useEffect(() => {
@@ -1075,10 +1173,18 @@ function TerminalOutput({ stdout, stderr }: { stdout: string; stderr?: string })
     if (!el) return
     requestAnimationFrame(() => { el.scrollTop = el.scrollHeight })
   }, [stdout, stderr])
+
+  const htmlStdout = ansiToHtml(stdout || '')
+  const htmlStderr = stderr ? ansiToHtml(`\x1b[31m${stderr}\x1b[0m`) : ''
+
   return (
-    <pre ref={ref} className="mt-2 max-h-96 overflow-auto custom-scrollbar rounded bg-zinc-950 px-2 py-1.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all text-zinc-300">
-      {stdout}{stderr && `\n\x1b[31m${stderr}\x1b[0m`}
-    </pre>
+    <pre
+      ref={ref}
+      className="mt-2 max-h-96 overflow-auto custom-scrollbar rounded bg-zinc-950 px-2 py-1.5 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all text-zinc-300"
+      dangerouslySetInnerHTML={{
+        __html: htmlStdout + (htmlStderr ? '\n' + htmlStderr : ''),
+      }}
+    />
   )
 }
 

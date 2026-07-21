@@ -235,7 +235,7 @@ export { trackFileOp } from './fileTracker'
 export async function chat(
   messages: ChatMessage[],
   onEvent?: (event: ChatStreamEvent) => void,
-  opts?: { abortSignal?: AbortSignal; autoMode?: boolean; localModelId?: string; forceCompression?: boolean; memoryInjection?: string; userId?: string; modelOverride?: { provider: string; modelId: string }; thinkingBudgetTokens?: number },
+  opts?: { abortSignal?: AbortSignal; autoMode?: boolean; localModelId?: string; forceCompression?: boolean; memoryInjection?: string; userId?: string; modelOverride?: { provider: string; modelId: string; apiKey?: string; baseUrl?: string }; thinkingBudgetTokens?: number },
 ) {
   // 本地模型路径
   if (opts?.localModelId) {
@@ -245,9 +245,15 @@ export async function chat(
   const primaryConfig = getChatModel()
   if (!primaryConfig) throw new Error('请先在设置中启用一个 AI 模型')
   let currentConfig: ProviderConfig = primaryConfig
-  // 动态路由：覆盖模型选择（同时更新 provider，避免选 DeepSeek 走 Anthropic）
+  // 动态路由：覆盖模型选择（同时更新 provider/apiKey/baseUrl）
   if (opts?.modelOverride) {
-    currentConfig = { ...currentConfig, modelId: opts.modelOverride.modelId, provider: opts.modelOverride.provider }
+    currentConfig = {
+      ...currentConfig,
+      modelId: opts.modelOverride.modelId,
+      provider: opts.modelOverride.provider,
+      ...(opts.modelOverride.apiKey ? { apiKey: opts.modelOverride.apiKey } : {}),
+      ...(opts.modelOverride.baseUrl ? { baseUrl: opts.modelOverride.baseUrl } : {}),
+    }
   }
 
   // 注入 Agent 流式回调，让 delegate_task 能把 Agent 执行过程"开窗"到主对话
@@ -379,7 +385,7 @@ export async function chat(
   // Phase 1: 内置工具显式白名单——不靠命名猜测，声明即内置
   const CORE_TOOL_PREFIXES = [
     'workspace_', 'git_', 'sandbox_',                          // 文件/Git/沙箱
-    'run_terminal', 'check_terminal', 'run_terminal_input',    // 终端
+    'run_terminal', 'check_terminal', 'run_terminal_input', 'get_command_history', // 终端
     'web_fetch', 'web_search', 'search_bing', 'search_duckduckgo', // 网络
     'mcp_list', 'mcp_read', 'mcp_get',                          // MCP 网关
     'ask_user', 'show_progress', 'notify_complete', 'update_task_list', // Agent UI
@@ -607,7 +613,7 @@ export async function chat(
   const MAX_ESCALATIONS = 2
   const MAX_TOOL_ABANDONMENT_RETRIES = 1
   // 对齐 CC proxy: DeepSeek/OpenAI 兼容模型不传 max_tokens 或小步升级
-  const providerName = (primaryConfig.provider).toLowerCase()
+  const providerName = (currentConfig.provider).toLowerCase()
   const isOpenAICompat = ['deepseek', '深度求索', 'openai', 'qwen', '通义千问', 'openrouter', 'groq', 'together', 'mistral', 'ollama', 'lmstudio', 'perplexity', 'fireworks'].some(
     p => providerName.includes(p)
   )

@@ -128,7 +128,7 @@
 
 /* 对话区域强制所有内容换行，防止横向溢出 */
 .chat-messages * {
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 .chat-messages pre {
@@ -143,5 +143,135 @@
 .chat-messages img {
   max-width: 100%;
   height: auto;
+}
+
+/* ====== Markdown 分割线 ====== */
+.wmde-markdown hr {
+  height: 1px !important;
+  background: hsl(var(--border) / 0.5) !important;
+  border: none !important;
+}
+
+.wmde-markdown h1,
+.wmde-markdown h2 {
+  border-bottom: none !important;
+}
+
+/* ====== Markdown 表格样式 ====== */
+/*
+ * 库里有多套冲突规则需要全部覆盖：
+ * 1. display:block → table 渲染异常
+ * 2. th/td { border: 1px solid } → 框线
+ * 3. tr { background-color, border-top } → 缺角元凶
+ */
+.wmde-markdown table {
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: none;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+div.wmde-markdown table tr {
+  background-color: transparent !important;
+  border-top: none !important;
+}
+
+div.wmde-markdown table th,
+div.wmde-markdown table td {
+  border: none !important;
+  padding: 10px 20px;
+}
+
+.wmde-markdown table th {
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.2);
+}
+
+.wmde-markdown table td {
+  font-size: 14px;
+  color: hsl(var(--foreground));
+  background: transparent;
+}
+
+.wmde-markdown table tbody tr:hover td {
+  background: hsl(var(--muted) / 0.06) !important;
+}
+
+/* 四个角 cell 圆角 — overflow:hidden 对 table 不生效 */
+.wmde-markdown table thead tr:first-child th:first-child,
+.wmde-markdown table tbody tr:first-child td:first-child {
+  border-top-left-radius: 8px;
+}
+.wmde-markdown table thead tr:first-child th:last-child,
+.wmde-markdown table tbody tr:first-child td:last-child {
+  border-top-right-radius: 8px;
+}
+.wmde-markdown table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 8px;
+}
+.wmde-markdown table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 8px;
+}
+
+/* ====== KaTeX 公式错误降级 ====== */
+.wmde-markdown .katex-error {
+  color: hsl(var(--muted-foreground)) !important;
+  font-size: inherit !important;
+  border: none !important;
+}
+
+/* ====== 代码块语言标签 ====== */
+.wmde-markdown pre[class*="language-"] {
+  position: relative;
+  padding-top: 2.2em !important;
+}
+
+.wmde-markdown pre[class*="language-"]::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 3px 12px;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
+  color: hsl(var(--muted-foreground) / 0.45);
+  pointer-events: none;
+}
+
+/* ====== 列表样式 ====== */
+.wmde-markdown ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+
+.wmde-markdown ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+
+.wmde-markdown ul ul,
+.wmde-markdown ol ul {
+  list-style: circle;
+}
+
+.wmde-markdown ul ol,
+.wmde-markdown ol ol {
+  list-style: decimal;
+}
+
+.wmde-markdown li {
+  margin-top: 0.15em;
+  padding-left: 0.25em;
+}
+
+.wmde-markdown li::marker {
+  color: hsl(var(--muted-foreground) / 0.45);
+  font-size: 0.85em;
 }
 

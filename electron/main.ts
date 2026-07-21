@@ -115,6 +115,13 @@ app.whenReady().then(async () => {
     sidecar.onEvent('event.model.chatChunk', (p) => broadcast('event.model.chatChunk', p))
     sidecar.onEvent('event.model.chatDone', (p) => broadcast('event.model.chatDone', p))
     sidecar.onEvent('event.model.chatError', (p) => broadcast('event.model.chatError', p))
+    // 终端流式事件转发
+    sidecar.onEvent('event.terminal.output', (p) => {
+      BrowserWindow.getAllWindows().forEach(w => w.webContents.send('terminal:output', p))
+    })
+    sidecar.onEvent('event.pty.output', (p) => {
+      BrowserWindow.getAllWindows().forEach(w => w.webContents.send('terminal:ptyOutput', p))
+    })
   } catch (e: any) {
     console.error('[main] ⚠️ Rust Sidecar 启动失败，回退到 Node.js 模式:', e.message)
   }
