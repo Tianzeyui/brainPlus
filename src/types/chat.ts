@@ -32,6 +32,30 @@ export type MainTimelineItem =
   | { type: 'thinking'; content: string }
   | { type: 'text'; content: string }
 
+/** Git 操作状态 */
+export interface GitOpStatus {
+  id: string
+  command: string          // 如 'git status', 'git commit -m "fix"', 'git push origin main'
+  description: string      // 简短描述，如 '查看工作区状态'
+  status: 'running' | 'done' | 'error'
+  output?: string          // git 命令输出（stdout）
+  error?: string           // 错误信息（stderr）
+  startTime: number
+  endTime?: number
+}
+
+/** 工作区操作状态 */
+export interface WorkspaceOpStatus {
+  id: string
+  tool: 'read_file' | 'write_file' | 'edit_file' | 'list_dir' | 'glob' | 'grep' | 'create_dir' | 'delete_file' | 'append_file' | 'move_file' | 'batch_edit' | 'file_info' | 'compare_files' | 'backup_file' | 'restore_file' | 'run_tests'
+  path: string             // 操作的文件/目录路径
+  status: 'running' | 'done' | 'error'
+  output?: string
+  error?: string
+  startTime: number
+  endTime?: number
+}
+
 export interface UIMessage {
   id?: string       // 消息唯一标识（reducer 自动分配）
   role: 'user' | 'assistant' | 'tool'
@@ -51,6 +75,28 @@ export interface UIMessage {
   mainTimeline?: MainTimelineItem[]     // 主对话时间线：thinking+text 按实际发生顺序
   terminal?: TerminalStatus             // 终端命令状态
   fileOp?: FileOpRequest               // 文件操作请求
+  gitOp?: GitOpStatus                  // Git 操作状态
+  githubOp?: GitHubOpStatus            // GitHub 操作状态
+  workspaceOp?: WorkspaceOpStatus      // 工作区操作状态
+  taskSnapshot?: TaskSnapshot          // 任务列表快照
+}
+
+/** GitHub 操作状态 */
+export interface GitHubOpStatus {
+  id: string
+  command: string
+  description: string
+  status: 'running' | 'done' | 'error'
+  output?: string
+  error?: string
+  startTime: number
+  endTime?: number
+}
+
+/** 任务列表面板快照 */
+export interface TaskSnapshot {
+  tasks: Array<{ id: string; title: string; status: string }>
+  updatedAt: number
 }
 
 export interface ConsoleLine {

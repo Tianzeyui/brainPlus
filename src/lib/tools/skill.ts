@@ -77,7 +77,7 @@ export function registerSkillTools(tools: ToolMap) {
         const nextHint = skill.sections.length > 0
           ? `用 read_skill("${name}", "${filePath}", {lines: "${Math.max(readEnd + 1, 1)}-${allLines.length}"}) 继续读取剩余内容。`
           : ''
-        return `\n\n---\n📋 ${filePath}: ${allLines.length}行，已读 ${readEnd - readStart + 1}行 (${pct}%)\n${sectionsHint ? '其他段落:\n' + sectionsHint + '\n' : ''}${nextHint}`
+        return `\n\n---\n ${filePath}: ${allLines.length}行，已读 ${readEnd - readStart + 1}行 (${pct}%)\n${sectionsHint ? '其他段落:\n' + sectionsHint + '\n' : ''}${nextHint}`
       }
 
       if (section) {

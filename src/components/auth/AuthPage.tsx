@@ -57,7 +57,7 @@ export function AuthPage() {
         <Card className="w-full max-w-md border-yellow-300 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950/30">
           <CardContent className="p-4">
             <p className="text-sm text-yellow-800 dark:text-yellow-200">
-              ⚠️ 尚未配置 Supabase 连接信息。请点击右上角的{' '}
+               尚未配置 Supabase 连接信息。请点击右上角的{' '}
               <Settings className="inline h-4 w-4" /> 设置按钮进行配置。
             </p>
           </CardContent>

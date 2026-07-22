@@ -130,11 +130,14 @@ export class SidecarManager extends EventEmitter {
           for (const line of lines) {
             if (!line) continue
             // 尝试解析 JSON 格式的 tracing 日志
+            // Rust sidecar stdout 日志（仅保留 error/warn 级别）
             try {
               const log = JSON.parse(line)
-              console.log(`[sidecar:rust] ${log.level || 'INFO'}: ${log.fields?.message || log.message || line}`)
+              if (log.level === 'ERROR' || log.level === 'WARN') {
+                console.log(`[sidecar:rust] ${log.level}: ${log.fields?.message || log.message || line}`)
+              }
             } catch {
-              console.log(`[sidecar:rust] ${line}`)
+              // 非 JSON 行不打印，减少噪音
             }
           }
         })
@@ -181,7 +184,7 @@ export class SidecarManager extends EventEmitter {
           clearTimeout(readyTimeout)
           this.started = true
           this.restartAttempts = 0
-          console.log('[sidecar] ✅ 就绪')
+          console.log('[sidecar] 就绪')
           resolve()
         })
       } catch (e: any) {
@@ -282,7 +285,7 @@ export class SidecarManager extends EventEmitter {
 
       try {
         this.child!.stdin!.write(request + '\n')
-        console.log(`[sidecar] → ${method} (id=${id})`)
+        // IPC 调用去噪：只在调试时打印
       } catch (e: any) {
         clearTimeout(timer)
         this.pendingCalls.delete(id)
@@ -337,7 +340,7 @@ export class SidecarManager extends EventEmitter {
         this.child!.stdin!.write(JSON.stringify({
           jsonrpc: '2.0', id, method, params,
         }) + '\n')
-        console.log(`[sidecar] → ${method} (id=${id}, collect)`)
+        // IPC 调用去噪：只在调试时打印
       } catch (e: any) {
         clearTimeout(timer)
         for (const unsub of unsubscribers) unsub()

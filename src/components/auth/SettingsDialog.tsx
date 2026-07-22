@@ -145,7 +145,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </Button>
           <div className="flex gap-2">
             {saved && (
-              <span className="flex items-center text-sm text-green-600">✓ 已保存</span>
+              <span className="flex items-center text-sm text-green-600"> 已保存</span>
             )}
             <Button onClick={handleSave} disabled={!supabaseUrl.trim() || !supabaseAnonKey.trim()}>
               保存

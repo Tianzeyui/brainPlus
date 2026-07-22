@@ -177,6 +177,22 @@ async fn fs_unlink(req: crate::protocol::Request, _tx: mpsc::Sender<OutputLine>)
     }
 }
 
+// ====== 重命名/移动文件 ======
+
+async fn fs_rename(req: crate::protocol::Request, _tx: mpsc::Sender<OutputLine>) -> HandlerResult {
+    let source = req.param_str("source").ok_or_else(|| {
+        crate::protocol::RpcError { code: -32602, message: "缺少必填参数: source".into(), data: None }
+    })?;
+    let dest = req.param_str("dest").ok_or_else(|| {
+        crate::protocol::RpcError { code: -32602, message: "缺少必填参数: dest".into(), data: None }
+    })?;
+
+    match tokio::fs::rename(source, dest).await {
+        Ok(()) => Ok(serde_json::json!({"success": true})),
+        Err(e) => Ok(serde_json::json!({"success": false, "error": e.to_string()})),
+    }
+}
+
 // ====== 文件搜索（流式 + .gitignore 感知） ======
 
 const SKIP_DIRS: &[&str] = &[
@@ -547,6 +563,7 @@ pub fn register(registry: &mut Registry) {
     registry.register("fs.listDir", |req, tx| Box::pin(fs_list_dir(req, tx)));
     registry.register("fs.mkdir", |req, tx| Box::pin(fs_mkdir(req, tx)));
     registry.register("fs.unlink", |req, tx| Box::pin(fs_unlink(req, tx)));
+    registry.register("fs.rename", |req, tx| Box::pin(fs_rename(req, tx)));
     registry.register("fs.find", |req, tx| Box::pin(fs_find(req, tx)));
     registry.register("fs.grep", |req, tx| Box::pin(fs_grep(req, tx)));
     registry.register("fs.readFileBase64", |req, tx| Box::pin(fs_read_file_base64(req, tx)));

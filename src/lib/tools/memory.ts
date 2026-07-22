@@ -32,7 +32,7 @@ export function registerMemoryTools(tools: ToolMap) {
       const exists = await memoryExists(name)
       await writeMemory(name, description, body, (type as any) || 'user')
       const action = exists ? '更新' : '写入'
-      return `✅ 记忆 "${name}" 已${action}。\n描述: ${description}`
+      return ` 记忆 "${name}" 已${action}。\n描述: ${description}`
     },
   }
 
@@ -92,7 +92,7 @@ export function registerMemoryTools(tools: ToolMap) {
         return `未找到记忆 "${name}"。可用记忆: ${slugs.join(', ') || '(无)'}`
       }
       await deleteMemory(name)
-      return `✅ 记忆 "${name}" 已删除。`
+      return ` 记忆 "${name}" 已删除。`
     },
   }
 }

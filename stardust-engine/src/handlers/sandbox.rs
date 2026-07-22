@@ -69,7 +69,7 @@ async fn execute_node(code: &str, output_dir: Option<&str>, timeout_secs: u64) -
                 if let Some(dir) = output_dir {
                     if let Ok(files) = collect_output_files(&dir) {
                         if !files.is_empty() {
-                            result_text.push_str("\n\n📁 输出文件:\n");
+                            result_text.push_str("\n\n输出文件:\n");
                             for f in &files {
                                 result_text.push_str(&format!("- {f}\n"));
                             }
@@ -189,7 +189,7 @@ async fn sandbox_execute_python(req: crate::protocol::Request, _tx: mpsc::Sender
                 if let Some(dir) = output_dir {
                     if let Ok(files) = collect_output_files(&dir) {
                         if !files.is_empty() {
-                            result_text.push_str("\n\n📁 输出文件:\n");
+                            result_text.push_str("\n\n输出文件:\n");
                             for f in &files {
                                 result_text.push_str(&format!("- {f}\n"));
                             }

@@ -47,7 +47,7 @@ export function registerWebFetchTool(tools: ToolMap) {
         const text = stripHtml(result.data || '')
         // 检测 JS 墙
         if (text.length < 200 && /JavaScript|javascript|enable.*js|cookie|Cloudflare/i.test(text)) {
-          return `⚠️ This page requires JavaScript (${text.length} chars captured). Try searching for the same info on a different site, or use textise.iitty.com as a proxy.`
+          return ` This page requires JavaScript (${text.length} chars captured). Try searching for the same info on a different site, or use textise.iitty.com as a proxy.`
         }
 
         if (doSummarize) {

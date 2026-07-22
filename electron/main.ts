@@ -103,9 +103,9 @@ app.whenReady().then(async () => {
 
     // 自动连接内置 MCP 服务器（Filesystem, GitHub, PostgreSQL）
     getSidecar().call('mcp.autoConnectBuiltins').then((r: any) => {
-      console.log(`[main] 🔌 内置 MCP: ${r?.connected || 0} 个已连接, ${r?.failed || 0} 个失败`)
+      console.log(`[main] 内置 MCP: ${r?.connected || 0} 个已连接, ${r?.failed || 0} 个失败`)
     }).catch((e: any) => {
-      console.warn('[main] ⚠️ 内置 MCP 自动连接失败:', e.message)
+      console.warn('[main] 内置 MCP 自动连接失败:', e.message)
     })
 
     // 全局事件转发：Sidecar 事件 → 所有渲染进程窗口
@@ -123,7 +123,7 @@ app.whenReady().then(async () => {
       BrowserWindow.getAllWindows().forEach(w => w.webContents.send('terminal:ptyOutput', p))
     })
   } catch (e: any) {
-    console.error('[main] ⚠️ Rust Sidecar 启动失败，回退到 Node.js 模式:', e.message)
+    console.error('[main] Rust Sidecar 启动失败，回退到 Node.js 模式:', e.message)
   }
 
   createWindow()

@@ -88,9 +88,9 @@ export function registerWebSearchTool(tools: ToolMap) {
               `Summarize this page in 2-3 sentences focusing on the query "${query}":\n\n${text}`,
               'Be concise. Return only the summary.'
             )
-            summaries += `\n\n📄 ${r.title}: ${sum || text.slice(0, 200) + '...'}`
+            summaries += `\n\n ${r.title}: ${sum || text.slice(0, 200) + '...'}`
           }
-        } catch { summaries += `\n\n📄 ${r.title}: (fetch failed)` }
+        } catch { summaries += `\n\n ${r.title}: (fetch failed)` }
       }
       return list + `\n\n--- Auto-summaries ---${summaries}`
     },

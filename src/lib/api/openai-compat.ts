@@ -314,14 +314,12 @@ export async function* streamOpenAICompat(
             // 模式 A：content 短于 reasoning，是 reasoning 的前缀 → 吸收
             if (reasoningAccum.startsWith(contentAccum)) {
               absorbedLen = contentAccum.length
-              console.log('[echo] A absorb:', absorbedLen, 'rLen:', reasoningAccum.length, 'cLen:', contentAccum.length)
               continue
             }
             // 模式 B：reasoning 短于 content，reasoning 是 content 的前缀 → 只取超出部分
             if (contentAccum.startsWith(reasoningAccum)) {
               echoStripped = true
               const newContent = contentAccum.slice(reasoningAccum.length)
-              console.log('[echo] B content-outran rLen:', reasoningAccum.length, 'cLen:', contentAccum.length, 'yield:', newContent.length)
               if (newContent) {
                 contentYielded = true; yield { type: 'text-delta', text: newContent }
               }
@@ -331,7 +329,6 @@ export async function* streamOpenAICompat(
             if (absorbedLen > 0) {
               echoStripped = true
               const newContent = contentAccum.slice(absorbedLen)
-              console.log('[echo] C partial absorbed:', absorbedLen, 'cLen:', contentAccum.length, 'yield:', newContent.length)
               if (newContent) {
                 contentYielded = true; yield { type: 'text-delta', text: newContent }
               }
@@ -351,8 +348,6 @@ export async function* streamOpenAICompat(
                 if (ratio > 0.6) {
                   // 60%+ 词在 reasoning 中出现 → echo，吸收
                   echoStripped = true
-                  console.log('[echo] D word-overlap rLen:', reasoningAccum.length,
-                    'cLen:', contentAccum.length, 'overlapRatio:', ratio.toFixed(2), '→ absorbed')
                   continue
                 }
               }
@@ -360,9 +355,6 @@ export async function* streamOpenAICompat(
             // 词级也不匹配 → 真正不是 echo
             if (contentAccum.length < 20) continue  // 内容还不够长，再等等
             echoStripped = true
-            console.log('[echo] E yield-all rLen:', reasoningAccum.length, 'cLen:', contentAccum.length,
-              'r[:30]:', JSON.stringify(reasoningAccum.slice(0, 30)),
-              'c[:30]:', JSON.stringify(contentAccum.slice(0, 30)))
             contentYielded = true; yield { type: 'text-delta', text: contentAccum }
           } else {
             // 已剥离或无 reasoning：正常 yield delta

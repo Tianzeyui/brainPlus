@@ -145,6 +145,8 @@ export async function getMCPSdkTools(autoMode?: boolean, userId?: string): Promi
     const { registerWebSearchTool } = await import('./tools/webSearch')
     const { registerVerifyTools } = await import('./tools/verify')
     const { registerMemoryTools } = await import('./tools/memory')
+    const { registerIdeTools } = await import('./tools/ide')
+    const { registerGitHubTools } = await import('./tools/github')
 
     await registerMCPBusinessTools(tools)
     registerSkillTools(tools)
@@ -155,9 +157,11 @@ export async function getMCPSdkTools(autoMode?: boolean, userId?: string): Promi
     await registerWorkspaceTools(tools)
     registerTerminalTool(tools)
     registerGitTools(tools)
+    registerGitHubTools(tools)
     registerWebFetchTool(tools)
     registerWebSearchTool(tools)
     registerMemoryTools(tools)
+    registerIdeTools(tools)
     // 注入插件 AI 工具
     const { pluginSystem } = await import('./pluginSystem')
     Object.assign(tools, pluginSystem.getPluginTools())
@@ -384,7 +388,7 @@ export async function chat(
 
   // Phase 1: 内置工具显式白名单——不靠命名猜测，声明即内置
   const CORE_TOOL_PREFIXES = [
-    'workspace_', 'git_', 'sandbox_',                          // 文件/Git/沙箱
+    'workspace_', 'git_', 'github_', 'sandbox_',               // 文件/Git/GitHub/沙箱
     'run_terminal', 'check_terminal', 'run_terminal_input', 'get_command_history', // 终端
     'web_fetch', 'web_search', 'search_bing', 'search_duckduckgo', // 网络
     'mcp_list', 'mcp_read', 'mcp_get',                          // MCP 网关
@@ -393,6 +397,7 @@ export async function chat(
     'plugin__',                                                 // 插件
     'read_skill', 'search_tools', 'use_tool',                  // 技能 + 按需激活
     'memory_',                                                   // 记忆
+    'ide_open_file',                                             // IDE 集成
   ]
   const isCoreTool = (name: string) => CORE_TOOL_PREFIXES.some(p => name.startsWith(p))
 
@@ -540,10 +545,9 @@ export async function chat(
   const dynamicPart = opts?.memoryInjection || ''
 
   if (opts?.memoryInjection) {
-    console.log('[memory] 本轮注入记忆:\n' + opts.memoryInjection)
-    onEvent?.({ type: 'system-log', text: `🧠 记忆注入:\n${opts.memoryInjection}` })
+    onEvent?.({ type: 'system-log', text: `记忆注入:\n${opts.memoryInjection}` })
   } else {
-    onEvent?.({ type: 'system-log', text: '🧠 无记忆（对话中提取后将在此显示）' })
+    onEvent?.({ type: 'system-log', text: '无记忆（对话中提取后将在此显示）' })
   }
 
   // 动静分离：静态在前，动态追加。缓存通过beta header处理
@@ -551,7 +555,7 @@ export async function chat(
   if (dynamicPart.trim()) finalSystem += '\n\n' + dynamicPart.trim()
   if (postCompactInjection) finalSystem += '\n\n' + postCompactInjection
 
-  onEvent?.({ type: 'system-log', text: `📋 系统提示词 (${finalSystem.length}字):\n${finalSystem.slice(0, 500)}${finalSystem.length > 500 ? '...(截断)' : ''}` })
+  onEvent?.({ type: 'system-log', text: `系统提示词 (${finalSystem.length}字):\n${finalSystem.slice(0, 500)}${finalSystem.length > 500 ? '...(截断)' : ''}` })
 
   // user message 注入：对齐 CC prependUserContext —— 每轮强制注入上下文提醒
   const contextMessages: Array<{ role: 'user'; content: string }> = []
@@ -575,9 +579,9 @@ export async function chat(
     : ''
   const toolDisciplineMessages: Record<string, string> = {
     basic: `You have access to tools — use them for reading files, editing code, running commands.`,
-    moderate: `⚠️ TOOL DISCIPLINE: As the conversation continues, you MUST keep using tools. Every code change, file read, test run, or verification claim MUST come from a tool call in this turn. Do not drift into text-only mode.${filesRestoredNote}`,
-    strong: `⚠️⚠️ STRONG TOOL DISCIPLINE (turn ${turnCount}): You have been working on this task for a while. This is when models tend to skip tools and hallucinate. RESIST THIS. You MUST call tools for EVERY action. No tool call = no knowledge. Verify every change.${filesRestoredNote}`,
-    critical: `🛑 CRITICAL TOOL DISCIPLINE (turn ${turnCount}): Long conversation — highest risk of tool abandonment. Every statement about code, tests, or results WITHOUT a tool call in this turn is a HALLUCINATION. Call tools for EVERYTHING.${filesRestoredNote}`,
+    moderate: `TOOL DISCIPLINE: As the conversation continues, you MUST keep using tools. Every code change, file read, test run, or verification claim MUST come from a tool call in this turn. Do not drift into text-only mode.${filesRestoredNote}`,
+    strong: `STRONG TOOL DISCIPLINE (turn ${turnCount}): You have been working on this task for a while. This is when models tend to skip tools and hallucinate. RESIST THIS. You MUST call tools for EVERY action. No tool call = no knowledge. Verify every change.${filesRestoredNote}`,
+    critical: ` CRITICAL TOOL DISCIPLINE (turn ${turnCount}): Long conversation — highest risk of tool abandonment. Every statement about code, tests, or results WITHOUT a tool call in this turn is a HALLUCINATION. Call tools for EVERYTHING.${filesRestoredNote}`,
   }
 
   const toolSummary = [
@@ -606,7 +610,7 @@ export async function chat(
     ].filter(Boolean).join('\n'),
   })
 
-  onEvent?.({ type: 'system-log', text: `🔧 发送 ${Object.keys(filteredTools).length} 个工具` })
+  onEvent?.({ type: 'system-log', text: `发送 ${Object.keys(filteredTools).length} 个工具` })
   let currentMessages = [...contextMessages, ...compressedMessages]
 
   // ====== 恢复循环：max_output_tokens 升级 + 模型回退 + 工具放弃检测 ======
@@ -692,11 +696,11 @@ export async function chat(
       ) {
         const recovered = await tryReactiveCompact(currentMessages.slice(contextMessages.length), cwm, contextWindow)
         if (recovered) {
-          onEvent?.({ type: 'system-log', text: '⚠️ 上下文过长，已自动压缩后重试...' })
+          onEvent?.({ type: 'system-log', text: '上下文过长，已自动压缩后重试...' })
           currentMessages = [...contextMessages, ...recovered]
           continue
         }
-        onEvent?.({ type: 'system-log', text: '⚠️ 上下文过长且无法自动压缩。请减少上下文后重试。' })
+        onEvent?.({ type: 'system-log', text: '上下文过长且无法自动压缩。请减少上下文后重试。' })
         break
       }
 
@@ -707,7 +711,7 @@ export async function chat(
           hasAttemptedFallback = true
           const fbName = fallbackConfig.provider
           currentConfig = fallbackConfig
-          onEvent?.({ type: 'system-log', text: `⚠️ 模型调用失败，回退到 ${fbName}/${fallbackConfig.modelId}...` })
+          onEvent?.({ type: 'system-log', text: `模型调用失败，回退到 ${fbName}/${fallbackConfig.modelId}...` })
           continue
         }
       }
@@ -730,7 +734,7 @@ export async function chat(
         maxOutputTokens = maxOutputTokens == null
           ? MAX_OUTPUT_FIRST
           : Math.min(maxOutputTokens * 2, MAX_OUTPUT_CAP)
-        onEvent?.({ type: 'system-log', text: `⚠️ 输出被截断 (finishReason=${finishReason})，升级至 ${maxOutputTokens} tokens 重试 (#${escalationCount})...` })
+        onEvent?.({ type: 'system-log', text: `输出被截断 (finishReason=${finishReason})，升级至 ${maxOutputTokens} tokens 重试 (#${escalationCount})...` })
         // 清空已展示的截断文本，重试后只展示完整版
         onEvent?.({ type: 'retry-clear' })
         assistantMsgs.push({ role: 'assistant', content: fullText.slice(-500) })
@@ -764,7 +768,7 @@ export async function chat(
 
         if (claimsCompletion) {
           toolAbandonmentRetries++
-          onEvent?.({ type: 'system-log', text: `🛑 检测到无工具调用的完成声明 (#${toolAbandonmentRetries})——模型在YY。强制重试并要求使用工具验证...` })
+          onEvent?.({ type: 'system-log', text: ` 检测到无工具调用的完成声明 (#${toolAbandonmentRetries})——模型在YY。强制重试并要求使用工具验证...` })
 
           // 保留最后一段文本作为上下文，注入强制工具提醒
           const tailText = fullText.slice(-300)
@@ -772,7 +776,7 @@ export async function chat(
             ...currentMessages,
             { role: 'assistant' as const, content: tailText },
             { role: 'user' as const, content: `<system-reminder>
-🛑 工具放弃强制恢复 (第${toolAbandonmentRetries}次)
+ 工具放弃强制恢复 (第${toolAbandonmentRetries}次)
 
 你刚才输出了声称完成任务的文本，但没有调用任何工具。这是工具放弃（Tool Abandonment）——不可接受。
 

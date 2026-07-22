@@ -23,9 +23,9 @@ const coreProjects: Plugin = {
 }
 
 const coreSkills: Plugin = {
-  manifest: { id: 'skills', name: 'Skills', version: '1.0.0', description: '', icon: 'BookOpen', navOrder: 20, enabled: true },
+  manifest: { id: 'skills', name: '技能', version: '1.0.0', description: '', icon: 'BookOpen', navOrder: 20, enabled: true },
   register(ctx) {
-    ctx.registerNav({ id: 'skills', label: 'Skills', icon: 'BookOpen', order: 20 })
+    ctx.registerNav({ id: 'skills', label: '技能', icon: 'BookOpen', order: 20 })
     ctx.registerRoute('skills', () => import('@/components/skills/SkillsPage'))
   },
 }

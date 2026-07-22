@@ -133,7 +133,7 @@ export function SkillsPage() {
       {/* ====== 顶栏 — 统一日记风格 ====== */}
       <div className="flex h-11 items-center gap-2 border-b border-border px-4">
         <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
-        <h2 className="text-sm font-semibold">Skills</h2>
+        <h2 className="text-sm font-semibold">技能</h2>
         <span className="text-[10px] text-muted-foreground/50 ml-0.5">
           {skills.length} 个已安装
         </span>

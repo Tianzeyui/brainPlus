@@ -86,6 +86,7 @@ export interface ElectronAPI {
     stat: (filePath: string) => Promise<{ success: boolean; stat?: { isFile: boolean; isDirectory: boolean; size: number; mtime: string }; error?: string }>
     writeFile: (filePath: string, content: string) => Promise<{ success: boolean; error?: string }>
     mkdir: (dirPath: string) => Promise<{ success: boolean; error?: string }>
+    rename: (source: string, dest: string) => Promise<{ success: boolean; error?: string }>
     copyDir: (src: string, dest: string) => Promise<{ success: boolean; error?: string }>
     grep: (dirPath: string, pattern: string, fileGlob?: string) => Promise<{ success: boolean; output?: string; error?: string }>
     find: (dirPath: string) => Promise<{ success: boolean; files?: string[]; error?: string }>
@@ -166,7 +167,12 @@ export interface ElectronAPI {
     pullRepo: (repoDir: string) => Promise<{ success: boolean; error?: string; plugins?: any[] }>
   }
   git: {
-    exec: (cwd: string, args: string[]) => Promise<{ success: boolean; output?: string; error?: string }>
+    exec: (cwd: string, args: string[], timeoutSec?: number) =>
+      Promise<{ success: boolean; output?: string; stderr?: string; exitCode?: number; error?: string }>
+  }
+  gh: {
+    exec: (cwd: string, args: string[], timeoutSec?: number) =>
+      Promise<{ success: boolean; output?: string; stderr?: string; exitCode?: number; error?: string }>
   }
   search: {
     fetch: (url: string, timeout: number) => Promise<{ success: boolean; error?: string; data?: string }>

@@ -3,6 +3,7 @@
 pub mod chat;
 pub mod fs;
 pub mod mcp;
+pub mod gh;
 pub mod git;
 pub mod terminal;
 pub mod search;
@@ -85,6 +86,9 @@ pub fn register_all() -> Registry {
 
     // ====== fs 操作 ======
     fs::register(&mut registry);
+
+    // ====== GitHub CLI 操作 ======
+    gh::register(&mut registry);
 
     // ====== git 操作 ======
     git::register(&mut registry);

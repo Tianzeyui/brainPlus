@@ -52,23 +52,34 @@ async fn git_exec(req: crate::protocol::Request, _tx: mpsc::Sender<OutputLine>) 
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout).to_string();
             let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let exit_code = output.status.code().unwrap_or(-1);
+
+            // stdout 截断保护（200k chars），stderr 截断保护（50k chars）
+            let trunc_stdout: String = stdout.trim().chars().take(200_000).collect();
+            let trunc_stderr: String = stderr.trim().chars().take(50_000).collect();
 
             if output.status.success() {
                 Ok(serde_json::json!({
                     "success": true,
-                    "output": stdout.trim().chars().take(50000).collect::<String>(),
+                    "output": trunc_stdout,
+                    // git push/pull 等操作的进度信息在 stderr，成功时也返回
+                    "stderr": trunc_stderr,
+                    "exitCode": exit_code,
                 }))
             } else {
                 Ok(serde_json::json!({
                     "success": false,
-                    "error": stderr.trim().to_string(),
-                    "output": stdout.trim().to_string(),
+                    "error": trunc_stderr,
+                    "output": trunc_stdout,
+                    "stderr": trunc_stderr,
+                    "exitCode": exit_code,
                 }))
             }
         }
         Err(e) => Ok(serde_json::json!({
             "success": false,
             "error": format!("git 命令执行失败: {e}"),
+            "exitCode": -1,
         })),
     }
 }

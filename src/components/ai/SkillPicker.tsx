@@ -19,10 +19,10 @@ export function SkillPicker() {
       <button
         className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] transition-colors ${skills.length > 0 ? 'text-primary/70 hover:text-primary' : 'text-muted-foreground/40 hover:text-muted-foreground'}`}
         onClick={() => setShow(!show)}
-        title="Skills"
+        title="技能"
       >
         <Package className="h-3 w-3" />
-        <span>Skills{skills.length > 0 ? ` ${skills.length}` : ''}</span>
+        <span>技能{skills.length > 0 ? ` ${skills.length}` : ''}</span>
       </button>
 
       {show && (
@@ -30,7 +30,7 @@ export function SkillPicker() {
           <div className="fixed inset-0 z-40" onClick={() => setShow(false)} />
           <div className="absolute left-0 bottom-full z-50 mb-1 w-64 rounded-lg border border-border bg-card shadow-lg">
             <div className="flex items-center justify-between border-b border-border px-3 py-2">
-              <span className="text-xs font-medium">已安装 Skills</span>
+              <span className="text-xs font-medium">已安装技能</span>
               <span className="text-[10px] text-muted-foreground/50">{skills.length} 个</span>
             </div>
             <div className="max-h-64 overflow-auto p-1">

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, memo } from 'react'
-import { Check, X, Shield, ShieldCheck, Cable, BookOpen, MessageSquare, FileText, Image, Zap, FolderOpen, Loader2, ChevronDown, IdCard, ExternalLink, Brain, Terminal, Search, Globe, Trash2, Bookmark, Layers } from 'lucide-react'
+import { Check, X, Shield, ShieldCheck, Cable, BookOpen, MessageSquare, FileText, Image, Zap, FolderOpen, Loader2, ChevronDown, IdCard, ExternalLink, Brain, Terminal, Search, Globe, Trash2, Bookmark, Layers, GitBranch, File, FilePlus, FilePenLine, FileSearch, FolderPlus, ListTodo, CheckCircle2, Circle } from 'lucide-react'
 import MarkdownPreview from '@uiw/react-markdown-preview'
-import type { UIMessage, ToolCallStatus, MessageAttachment, AgentToolCallEntry, AgentTimelineItem, TerminalStatus } from '@/types/chat'
+import type { UIMessage, ToolCallStatus, MessageAttachment, AgentToolCallEntry, AgentTimelineItem, TerminalStatus, GitOpStatus, WorkspaceOpStatus, GitHubOpStatus, TaskSnapshot } from '@/types/chat'
 import { useAuth } from '@/contexts/AuthContext'
 import type { FileOpRequest } from '@/lib/fileOpManager'
 import { confirm as confirmTerminal, reject as rejectTerminal, killTerminal } from '@/lib/terminalManager'
@@ -52,6 +52,7 @@ const HIDDEN_TOOLS = new Set([
   'update_task_list',
   'show_progress',
   'notify_complete',
+  'ide_open_file',
 ])
 
 function ChatMessageInner({ msg }: ChatMessageProps) {
@@ -64,6 +65,22 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
         onCancel={(id) => { killTerminal(id) }}
       />
     )
+  }
+
+  if (msg.gitOp) {
+    return <GitOpBubble go={msg.gitOp} />
+  }
+
+  if (msg.githubOp) {
+    return <GitHubOpBubble gho={msg.githubOp} />
+  }
+
+  if (msg.workspaceOp) {
+    return <WorkspaceOpBubble wo={msg.workspaceOp} />
+  }
+
+  if (msg.taskSnapshot) {
+    return <TaskSnapshotBubble ts={msg.taskSnapshot} />
   }
 
   if (msg.fileOp) {
@@ -79,6 +96,9 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
         {batch.map(tc => {
           if (tc.name === 'check_terminal') return <CheckTerminalBubble key={tc.id} tc={tc} />
           if (HIDDEN_TOOLS.has(tc.name)) return null
+          if (tc.name.startsWith('git_')) return null // GitOpBubble 已承载
+          if (tc.name.startsWith('github_')) return null // GitHubOpBubble 已承载
+          if (tc.name.startsWith('workspace_')) return null // WorkspaceOpBubble 已承载
           if (tc.name === 'web_search') return <SearchBubble key={tc.id} tc={tc} />
           if (tc.name === 'web_fetch') return <FetchBubble key={tc.id} tc={tc} />
           if (tc.name === 'delegate_task' || tc.name === 'delegate_batch') return <DelegateBubble key={tc.id} tc={tc} />
@@ -92,6 +112,7 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
   if (msg.role === 'tool' && msg.toolCall) {
     if (msg.toolCall.name === 'check_terminal') return <CheckTerminalBubble tc={msg.toolCall} />
     if (HIDDEN_TOOLS.has(msg.toolCall.name)) return null
+    if (msg.toolCall.name.startsWith('git_')) return null // GitOpBubble 已承载
     // 搜索/抓取用自定义样式
     if (msg.toolCall.name === 'web_search') return <SearchBubble tc={msg.toolCall} />
     if (msg.toolCall.name === 'web_fetch') return <FetchBubble tc={msg.toolCall} />
@@ -651,6 +672,213 @@ function ThinkingBlock({ thinking, loading, content, duration }: { thinking: str
 }
 
 /** 文件操作气泡（确认/结果展示） */
+function GitOpBubble({ go }: { go: GitOpStatus }) {
+  const [expanded, setExpanded] = useState(false)
+  const duration = go.endTime ? ((go.endTime - go.startTime) / 1000).toFixed(1) + 's' : ''
+
+  const icon = go.status === 'running'
+    ? <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin shrink-0" />
+    : go.status === 'error'
+    ? <X className="h-3.5 w-3.5 text-destructive shrink-0" />
+    : <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
+
+  const borderCls = go.status === 'running'
+    ? 'border-blue-500/30'
+    : go.status === 'error'
+    ? 'border-destructive/30'
+    : 'border-border'
+
+  const hasOutput = !!(go.output || go.error)
+
+  return (
+    <div className="flex gap-3">
+      <div className="min-w-0 flex-1">
+        <div className={`rounded-lg border ${borderCls} bg-card px-3 py-2 text-xs`}>
+          <div
+            className={`flex items-center gap-2 ${hasOutput ? 'cursor-pointer select-none' : ''}`}
+            onClick={() => hasOutput && setExpanded(!expanded)}
+          >
+            {icon}
+            <GitBranch className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="font-mono text-[11px] truncate">{go.command}</span>
+            <span className="text-[10px] text-muted-foreground/60 shrink-0 hidden sm:inline">{go.description}</span>
+            {duration && <span className="text-[10px] text-muted-foreground/40 shrink-0 ml-auto">{duration}</span>}
+            {hasOutput && (
+              <ChevronDown className={`h-3 w-3 text-muted-foreground shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            )}
+          </div>
+          {expanded && go.output && isDiffContent(go.output) ? (
+            <div className="mt-2 max-h-80 overflow-auto">
+              <DiffBlock text={go.output} />
+            </div>
+          ) : expanded && go.output && (
+            <pre className="mt-2 text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-60 overflow-auto bg-muted/30 rounded p-2">
+              {go.output.length > 5000 ? go.output.slice(0, 5000) + `\n… (${go.output.length} 字符，已截断)` : go.output}
+            </pre>
+          )}
+          {expanded && go.error && (
+            <pre className="mt-2 text-[11px] font-mono text-destructive whitespace-pre-wrap break-all max-h-40 overflow-auto bg-destructive/5 rounded p-2">
+              {go.error}
+            </pre>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ====== WorkspaceOpBubble ======
+
+function WorkspaceIcon({ tool }: { tool: string }) {
+  switch (tool) {
+    case 'read_file': return <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'write_file': return <FilePlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'edit_file': return <FilePenLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'list_dir': return <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'glob': return <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'grep': return <FileSearch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'create_dir': return <FolderPlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'delete_file': return <Trash2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'append_file': return <FilePlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'move_file': return <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'batch_edit': return <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'file_info': return <IdCard className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'compare_files': return <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'backup_file': case 'restore_file': return <Bookmark className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    case 'run_tests': return <Zap className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    default: return <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+  }
+}
+
+const WORKSPACE_LABELS: Record<string, string> = {
+  read_file: '读取', write_file: '写入', edit_file: '编辑', list_dir: '列出目录',
+  glob: '搜索文件', grep: '搜索内容', create_dir: '创建目录', delete_file: '删除', append_file: '追加',
+}
+
+function WorkspaceOpBubble({ wo }: { wo: WorkspaceOpStatus }) {
+  const [expanded, setExpanded] = useState(wo.tool === 'read_file' || wo.tool === 'write_file' || wo.tool === 'edit_file')
+  const duration = wo.endTime ? ((wo.endTime - wo.startTime) / 1000).toFixed(1) + 's' : ''
+  const isDiff = wo.tool === 'write_file' || wo.tool === 'edit_file'
+
+  const icon = wo.status === 'running'
+    ? <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin shrink-0" />
+    : wo.status === 'error'
+    ? <X className="h-3.5 w-3.5 text-destructive shrink-0" />
+    : <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
+
+  const borderCls = wo.status === 'running'
+    ? 'border-blue-500/30' : wo.status === 'error' ? 'border-destructive/30' : 'border-border'
+
+  const shortPath = wo.path.split('/').slice(-2).join('/') || wo.path
+
+  return (
+    <div className="flex gap-3">
+      <div className="min-w-0 flex-1">
+        <div className={`rounded-lg border ${borderCls} bg-card text-xs overflow-hidden`}>
+          <div className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
+            onClick={() => setExpanded(!expanded)}>
+            {icon}
+            <WorkspaceIcon tool={wo.tool} />
+            <span className="text-[10px] text-muted-foreground/60 shrink-0">{WORKSPACE_LABELS[wo.tool] || wo.tool}</span>
+            <span className="font-mono text-[11px] truncate flex-1" title={wo.path}>{shortPath}</span>
+            {duration && <span className="text-[10px] text-muted-foreground/40 shrink-0">{duration}</span>}
+            <ChevronDown className={`h-3 w-3 text-muted-foreground shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          </div>
+          {expanded && wo.output && !isDiff && (
+            <pre className="px-3 pb-2 text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-72 overflow-auto bg-muted/20">
+              {wo.output.length > 10000 ? wo.output.slice(0, 10000) + `\n… (${wo.output.length} 字符)` : wo.output}
+            </pre>
+          )}
+          {expanded && wo.output && isDiff && (
+            <div className="px-1 pb-1">
+              <DiffBlock text={wo.output} />
+            </div>
+          )}
+          {expanded && wo.error && (
+            <pre className="px-3 pb-2 text-[11px] font-mono text-destructive whitespace-pre-wrap break-all max-h-40 overflow-auto bg-destructive/5">
+              {wo.error}
+            </pre>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ====== TaskSnapshotBubble ======
+
+function TaskSnapshotBubble({ ts }: { ts: TaskSnapshot }) {
+  const doneCount = ts.tasks.filter(t => t.status === 'done' || t.status === 'completed').length
+  const runningTasks = ts.tasks.filter(t => t.status === 'running')
+  const total = ts.tasks.length
+
+  return (
+    <div className="flex gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="rounded-lg border border-border/50 bg-card/50 px-3 py-1.5 text-xs">
+          <div className="flex items-center gap-2">
+            <ListTodo className="h-3 w-3 text-muted-foreground shrink-0" />
+            <span className="text-[10px] text-muted-foreground">任务进度</span>
+            <span className="text-[10px] font-medium">{doneCount}/{total}</span>
+            {runningTasks.length > 0 && (
+              <span className="text-[10px] text-muted-foreground/60 truncate">
+                {runningTasks.map(t => t.title).join(', ')}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ====== GitHubOpBubble ======
+
+function GitHubOpBubble({ gho }: { gho: GitHubOpStatus }) {
+  const [expanded, setExpanded] = useState(false)
+  const duration = gho.endTime ? ((gho.endTime - gho.startTime) / 1000).toFixed(1) + 's' : ''
+  const hasOutput = !!(gho.output || gho.error)
+
+  const icon = gho.status === 'running'
+    ? <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin shrink-0" />
+    : gho.status === 'error'
+    ? <X className="h-3.5 w-3.5 text-destructive shrink-0" />
+    : <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
+
+  const borderCls = gho.status === 'running'
+    ? 'border-blue-500/30' : gho.status === 'error' ? 'border-destructive/30' : 'border-border'
+
+  return (
+    <div className="flex gap-3">
+      <div className="min-w-0 flex-1">
+        <div className={`rounded-lg border ${borderCls} bg-card px-3 py-2 text-xs`}>
+          <div className={`flex items-center gap-2 ${hasOutput ? 'cursor-pointer select-none' : ''}`}
+            onClick={() => hasOutput && setExpanded(!expanded)}>
+            {icon}
+            <Cable className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="font-mono text-[11px] truncate">{gho.command}</span>
+            <span className="text-[10px] text-muted-foreground/60 shrink-0 hidden sm:inline">{gho.description}</span>
+            {duration && <span className="text-[10px] text-muted-foreground/40 shrink-0 ml-auto">{duration}</span>}
+            {hasOutput && <ChevronDown className={`h-3 w-3 text-muted-foreground shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />}
+          </div>
+          {expanded && gho.output && (
+            <pre className="mt-2 text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-60 overflow-auto bg-muted/30 rounded p-2">
+              {gho.output.length > 5000 ? gho.output.slice(0, 5000) + `\n... (${gho.output.length} 字符)` : gho.output}
+            </pre>
+          )}
+          {expanded && gho.error && (
+            <pre className="mt-2 text-[11px] font-mono text-destructive whitespace-pre-wrap break-all max-h-40 overflow-auto bg-destructive/5 rounded p-2">
+              {gho.error}
+            </pre>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ====== FileOpBubble ======
+
 function FileOpBubble({ fo }: { fo: FileOpRequest }) {
   const icon = fo.status === 'done' ? <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
     : fo.status === 'error' ? <X className="h-3.5 w-3.5 text-destructive shrink-0" />
@@ -664,7 +892,7 @@ function FileOpBubble({ fo }: { fo: FileOpRequest }) {
           <div className="flex items-center gap-2">
             {icon}
             <span className="font-mono text-[11px] truncate">
-              {fo.type === 'write' ? '✎' : '✕'} {fo.path}
+              {fo.type === 'write' ? <FilePenLine className="h-3 w-3 inline shrink-0" /> : <Trash2 className="h-3 w-3 inline shrink-0" />} {fo.path}
             </span>
             <span className="text-[10px] text-muted-foreground shrink-0">
               {fo.status === 'pending_confirm' ? '待确认'
@@ -1199,6 +1427,28 @@ function areEqual(prev: ChatMessageProps, next: ChatMessageProps) {
       p.terminal?.stdout === n.terminal?.stdout &&
       p.terminal?.stderr === n.terminal?.stderr
   }
+  // GitOp / WorkspaceOp / FileOp / TaskSnapshot 消息：状态变化需要重渲染
+  if (p.gitOp || n.gitOp) {
+    return p.gitOp?.status === n.gitOp?.status &&
+      p.gitOp?.output === n.gitOp?.output &&
+      p.gitOp?.error === n.gitOp?.error
+  }
+  if (p.githubOp || n.githubOp) {
+    if (p.githubOp?.status !== n.githubOp?.status) return false // 状态变化必须重渲染
+    return p.githubOp?.output === n.githubOp?.output && p.githubOp?.error === n.githubOp?.error
+  }
+  if (p.workspaceOp || n.workspaceOp) {
+    return p.workspaceOp?.status === n.workspaceOp?.status &&
+      p.workspaceOp?.output === n.workspaceOp?.output &&
+      p.workspaceOp?.error === n.workspaceOp?.error
+  }
+  if (p.taskSnapshot || n.taskSnapshot) {
+    return p.taskSnapshot?.updatedAt === n.taskSnapshot?.updatedAt
+  }
+  if (p.fileOp || n.fileOp) {
+    return p.fileOp?.status === n.fileOp?.status &&
+      p.fileOp?.error === n.fileOp?.error
+  }
   // 已完成消息：比较关键字段内容
   return (
     p.content === n.content &&
@@ -1207,8 +1457,8 @@ function areEqual(prev: ChatMessageProps, next: ChatMessageProps) {
     p.role === n.role &&
     p.toolCall?.status === n.toolCall?.status &&
     p.toolCall?.result === n.toolCall?.result &&
-    JSON.stringify(p.toolBatch) === JSON.stringify(n.toolBatch) &&
-    JSON.stringify(p.agentTimeline) === JSON.stringify(n.agentTimeline)
+    (p.toolBatch === n.toolBatch || JSON.stringify(p.toolBatch) === JSON.stringify(n.toolBatch)) &&
+    (p.agentTimeline === n.agentTimeline || JSON.stringify(p.agentTimeline) === JSON.stringify(n.agentTimeline))
   )
 }
 

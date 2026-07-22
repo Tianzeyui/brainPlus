@@ -30,6 +30,7 @@ export function registerSidecarIpc(): void {
   forwardToSidecar('fs:stat', 'fs.stat', mapPath)
   forwardToSidecar('fs:mkdir', 'fs.mkdir', mapPath)
   forwardToSidecar('fs:unlink', 'fs.unlink', mapPath)
+  forwardToSidecar('fs:rename', 'fs.rename', (args) => ({ source: args[0], dest: args[1] }))
   forwardToSidecar('fs:writeFile', 'fs.writeFile', mapPathContent)
   forwardToSidecar('fs:copyDir', 'fs.copyDir', (args) => ({ src: args[0], dest: args[1] }))
 
@@ -53,8 +54,28 @@ export function registerSidecarIpc(): void {
     },
   )
 
+  // ==================== GitHub CLI → Rust Sidecar ====================
+  ipcMain.handle('gh:exec', async (_event, cwd: string, args: string[], timeoutSec?: number) => {
+    try {
+      const effectiveTimeout = ((timeoutSec || 30) + 2) * 1000
+      const result = await getSidecar().call('gh.exec', { cwd, args }, effectiveTimeout)
+      return result
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  })
+
   // ==================== Git → Rust Sidecar ====================
-  forwardToSidecar('git:exec', 'git.exec', mapCwdArgs)
+  // git:exec 需要动态超时（push/pull 等网络操作可能超过默认 30s），直接注册 ipcMain.handle
+  ipcMain.handle('git:exec', async (_event, cwd: string, args: string[], timeoutSec?: number) => {
+    try {
+      const effectiveTimeout = ((timeoutSec || 30) + 2) * 1000 // 命令超时 + 2s buffer
+      const result = await getSidecar().call('git.exec', { cwd, args }, effectiveTimeout)
+      return result
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  })
 
   // ==================== Terminal → Rust Sidecar ====================
   // terminal:execute 需要动态超时，不能使用 forwardToSidecar 的默认 30s

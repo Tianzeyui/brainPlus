@@ -37,11 +37,18 @@ export type MessageAction =
   | { type: 'AGENT_DONE'; label: string; content: string; agentTimeline: AgentTimelineItem[]; thinking: string }
   // 流结束
   | { type: 'STREAM_END'; streamed: string; thinkingDuration?: number }
-  // 终端 / 文件操作
+  // 终端 / 文件操作 / Git 操作
   | { type: 'ADD_TERMINAL'; terminal: TerminalStatus }
   | { type: 'UPDATE_TERMINAL'; terminal: TerminalStatus }
   | { type: 'ADD_FILEOP'; fileOp: any }
   | { type: 'UPDATE_FILEOP'; fileOp: any }
+  | { type: 'ADD_GITOP'; gitOp: import('@/types/chat').GitOpStatus }
+  | { type: 'UPDATE_GITOP'; gitOp: import('@/types/chat').GitOpStatus }
+  | { type: 'ADD_WORKSPACEOP'; workspaceOp: import('@/types/chat').WorkspaceOpStatus }
+  | { type: 'UPDATE_WORKSPACEOP'; workspaceOp: import('@/types/chat').WorkspaceOpStatus }
+  | { type: 'ADD_GITHUBOP'; githubOp: import('@/types/chat').GitHubOpStatus }
+  | { type: 'UPDATE_GITHUBOP'; githubOp: import('@/types/chat').GitHubOpStatus }
+  | { type: 'UPSERT_TASK_SNAPSHOT'; taskSnapshot: import('@/types/chat').TaskSnapshot }
   // 清理旧工具内容
   | { type: 'CLEAR_OLD_TOOLS' }
   // ask_user 回复
@@ -242,14 +249,68 @@ export function messageReducer(state: UIMessage[], action: MessageAction): UIMes
         state,
       )
 
+    case 'ADD_GITOP':
+      // 先清理同 id 的旧消息（防重复），再追加
+      return [...state.filter(m => !((m as any).gitOp?.id === action.gitOp.id)), { id: nextMsgId(), role: 'assistant', content: '', gitOp: action.gitOp, streaming: false } as UIMessage]
+
+    case 'UPDATE_GITOP': {
+      const updated = replaceLast(
+        m => !!(m as any).gitOp && (m as any).gitOp.id === action.gitOp.id,
+        m => ({ ...m, gitOp: { ...action.gitOp } }),
+        state,
+      )
+      // 找不到匹配消息时（极端边界情况），直接追加 done/error 消息
+      if (updated === state) {
+        return [...state, { id: nextMsgId(), role: 'assistant', content: '', gitOp: action.gitOp, streaming: false } as UIMessage]
+      }
+      return updated
+    }
+
     case 'CLEAR_OLD_TOOLS':
       if (state.length <= 20) return state
-      // 直接移除旧的工具消息（保留最近 15 条非工具 + 所有非工具消息）
       const keepFrom = Math.max(0, state.length - 15)
       return state.filter((m, i) => {
         if (m.role !== 'tool') return true
         return i >= keepFrom
       })
+
+    case 'ADD_WORKSPACEOP':
+      return [...state.filter(m => !((m as any).workspaceOp?.id === action.workspaceOp.id)), { id: nextMsgId(), role: 'assistant', content: '', workspaceOp: action.workspaceOp, streaming: false } as UIMessage]
+
+    case 'UPDATE_WORKSPACEOP': {
+      const updated = replaceLast(
+        m => !!(m as any).workspaceOp && (m as any).workspaceOp.id === action.workspaceOp.id,
+        m => ({ ...m, workspaceOp: { ...action.workspaceOp } }),
+        state,
+      )
+      if (updated === state) {
+        return [...state, { id: nextMsgId(), role: 'assistant', content: '', workspaceOp: action.workspaceOp, streaming: false } as UIMessage]
+      }
+      return updated
+    }
+
+    case 'ADD_GITHUBOP':
+      return [...state.filter(m => !((m as any).githubOp?.id === action.githubOp.id)), { id: nextMsgId(), role: 'assistant', content: '', githubOp: action.githubOp, streaming: false } as UIMessage]
+
+    case 'UPDATE_GITHUBOP': {
+      const updated = replaceLast(
+        m => !!(m as any).githubOp && (m as any).githubOp.id === action.githubOp.id,
+        m => ({ ...m, githubOp: { ...action.githubOp } }),
+        state,
+      )
+      if (updated === state) {
+        return [...state, { id: nextMsgId(), role: 'assistant', content: '', githubOp: action.githubOp, streaming: false } as UIMessage]
+      }
+      return updated
+    }
+
+    case 'UPSERT_TASK_SNAPSHOT':
+      // 同一轮对话中，替换最后一个 taskSnapshot 消息（避免重复积压）
+      return replaceLast(
+        m => !!(m as any).taskSnapshot,
+        m => ({ ...m, taskSnapshot: action.taskSnapshot }),
+        [...state, { id: nextMsgId(), role: 'assistant', content: '', taskSnapshot: action.taskSnapshot, streaming: false } as UIMessage],
+      )
 
     case 'ADD_USER_REPLY':
       return [...state, { id: nextMsgId(), role: 'user', content: action.content }]

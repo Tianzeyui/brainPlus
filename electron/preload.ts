@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     stat: (filePath: string) => ipcRenderer.invoke('fs:stat', filePath),
     writeFile: (filePath: string, content: string) => ipcRenderer.invoke('fs:writeFile', filePath, content),
     mkdir: (dirPath: string) => ipcRenderer.invoke('fs:mkdir', dirPath),
+    rename: (source: string, dest: string) => ipcRenderer.invoke('fs:rename', source, dest),
     copyDir: (src: string, dest: string) => ipcRenderer.invoke('fs:copyDir', src, dest),
     grep: (dirPath: string, pattern: string, fileGlob?: string) => ipcRenderer.invoke('fs:grep', dirPath, pattern, fileGlob),
     find: (dirPath: string) => ipcRenderer.invoke('fs:find', dirPath),
@@ -224,7 +225,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   git: {
-    exec: (cwd: string, args: string[]) => ipcRenderer.invoke('git:exec', cwd, args),
+    exec: (cwd: string, args: string[], timeoutSec?: number) =>
+      ipcRenderer.invoke('git:exec', cwd, args, timeoutSec),
+  },
+  gh: {
+    exec: (cwd: string, args: string[], timeoutSec?: number) =>
+      ipcRenderer.invoke('gh:exec', cwd, args, timeoutSec),
   },
 
   terminal: {

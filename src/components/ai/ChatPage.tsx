@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useReducer } from 'react'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import {
   ArrowRight, Loader2, Bot, X, ListTodo, Circle, CheckCircle2, File,
   FileText, Image, FolderOpen, ExternalLink, ArrowLeft, ArrowDown, Plus, Upload,
@@ -26,7 +27,9 @@ import { projectStore } from '@/lib/projectStore'
 import { pluginSystem } from '@/lib/pluginSystem'
 import { setSandboxOutputDir } from '@/lib/tools/sandbox'
 import { setWorkspaceRoots } from '@/lib/tools/workspace'
-import { setGitWorkspaceRoot } from '@/lib/tools/git'
+import { setGitWorkspaceRoot, setGitOpHandler } from '@/lib/tools/git'
+import { setGitHubWorkspaceRoot, setGitHubOpHandler } from '@/lib/tools/github'
+import { setWorkspaceOpHandler } from '@/lib/tools/workspace'
 import { setTermWorkspaceRoot } from '@/lib/tools/terminal'
 import { killAll as killAllTerminals, initStreamListener, destroyStreamListener } from '@/lib/terminalManager'
 import { messageReducer, nextMsgId, type MessageAction } from './chatReducer'
@@ -229,8 +232,8 @@ export function ChatPage() {
     initMemoryStore(() => workspace.root || null)
   }, [workspace.root])
   const logId = useRef(0)
-  const endRef = useRef<HTMLDivElement>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const taskListRef = useRef<Array<{ id: string; title: string; status: string }>>([])
   const pendingUpdateRef = useRef<(() => void) | null>(null)
   const rafRef = useRef(0)
   const streamTickRef = useRef(0)
@@ -254,62 +257,24 @@ export function ChatPage() {
     streamTickRef.current = now
     fn()
   }, [])
-  const [showScrollBtn, setShowScrollBtn] = useState(false)
-
   useEffect(() => { messagesRef.current = messages }, [messages])
+  useEffect(() => { taskListRef.current = taskList }, [taskList])
 
   // 渲染同步，确保事件回调里读到最新 streaming 状态
   const streamingRef = useRef(false)
   streamingRef.current = messages.some(m => m.streaming)
 
-  // 判断用户当前是否在底部（用实际 scroll 位置，不用 ref 记意图）
-  // 纯 DOM 层跟底——不依赖 React useEffect，避免与渲染循环竞争
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-
-    let atBottom = true
-
-    // scroll 事件：用户手动滚动时更新状态
-    const onScroll = () => {
-      atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-    }
-    el.addEventListener('scroll', onScroll, { passive: true })
-
-    // ResizeObserver：内容高度变化 → 用户在底部才跟底
-    let scrollRaf = 0
-    const ro = new ResizeObserver(() => {
-      if (!atBottom) return
-      // RAF 延迟，避免在 layout 阶段写 scrollTop 导致 thrashing
-      cancelAnimationFrame(scrollRaf)
-      scrollRaf = requestAnimationFrame(() => {
-        el.scrollTop = el.scrollHeight
-      })
-    })
-    ro.observe(el)
-
-    return () => {
-      el.removeEventListener('scroll', onScroll)
-      ro.disconnect()
-    }
+  // Virtuoso 自动跟底 + 回到底部按钮
+  const [atBottom, setAtBottom] = useState(true)
+  const scrollToBottom = useCallback(() => {
+    virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' })
   }, [])
-
-  // 显示"回到底部"按钮
-  useEffect(() => {
-    if (!streamingRef.current) return
-    const el = scrollRef.current
-    if (!el) return
-    const check = () => setShowScrollBtn(el.scrollHeight - el.scrollTop - el.clientHeight >= 80)
-    const id = requestAnimationFrame(check)
-    return () => cancelAnimationFrame(id)
-  }, [messages])
 
   // 流式结束时重置 + 旧工具结果清理（仅清理一次，防无限循环）
   const cleanedVersionRef = useRef(0)
   useEffect(() => {
     const streaming = messages.some(m => m.streaming)
     if (!streaming && messages.length > 0) {
-      setShowScrollBtn(false)
       if (messages.length > 20 && cleanedVersionRef.current !== messages.length) {
         const needsClean = messages.some((m, i) =>
           m.role === 'tool' && i < messages.length - 15 && m.content && m.content.length > 100
@@ -321,12 +286,6 @@ export function ChatPage() {
       }
     }
   }, [messages])
-
-  // 点击按钮：滚到底部（下一帧自动跟底会自然接上）
-  const scrollToBottom = useCallback(() => {
-    setShowScrollBtn(false)
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'instant' })
-  }, [])
 
   const pushLog = (icon: string, msg: string, status: ConsoleLine['status'] = 'info') => {
     const id = ++logId.current
@@ -391,7 +350,7 @@ export function ChatPage() {
 
   // 同步当前工作区到沙箱
   useEffect(() => { setSandboxOutputDir(workspace.output || undefined) }, [workspace.output])
-  useEffect(() => { setWorkspaceRoots(workspace.root, workspace.output); setGitWorkspaceRoot(workspace.root); setTermWorkspaceRoot(workspace.root) }, [workspace.root, workspace.output])
+  useEffect(() => { setWorkspaceRoots(workspace.root, workspace.output); setGitWorkspaceRoot(workspace.root); setGitHubWorkspaceRoot(workspace.root); setTermWorkspaceRoot(workspace.root) }, [workspace.root, workspace.output])
 
   // 展开选择器时刷新 + 外部点击关闭
   useEffect(() => {
@@ -426,6 +385,14 @@ export function ChatPage() {
           }
           return Array.from(map.values())
         })
+        // 同步发任务快照到聊天流
+        const currentTasks = Array.from(new Map(
+          [...(taskListRef.current || []), ...event.tasks].map(t => [t.id, t])
+        ).values())
+        dispatch({
+          type: 'UPSERT_TASK_SNAPSHOT',
+          taskSnapshot: { tasks: currentTasks, updatedAt: Date.now() },
+        })
       }
     })
     return () => setAgentUIHandler(null)
@@ -459,6 +426,45 @@ export function ChatPage() {
     }
     window.addEventListener('stardust:fileop', handler as EventListener)
     return () => window.removeEventListener('stardust:fileop', handler as EventListener)
+  }, [])
+
+  // Git 操作 UI 事件（直接回调模式，与 setTerminalUIHandler 同理）
+  useEffect(() => {
+    const handler = (event: { type: 'gitop_created' | 'gitop_updated'; gitOp: any }) => {
+      if (event.type === 'gitop_created') {
+        dispatch({ type: 'ADD_GITOP', gitOp: event.gitOp })
+      } else if (event.type === 'gitop_updated') {
+        dispatch({ type: 'UPDATE_GITOP', gitOp: event.gitOp })
+      }
+    }
+    setGitOpHandler(handler)
+    return () => { setGitOpHandler(null) }
+  }, [])
+
+  // 工作区操作 UI 事件
+  useEffect(() => {
+    const handler = (event: { type: 'workspaceop_created' | 'workspaceop_updated'; workspaceOp: any }) => {
+      if (event.type === 'workspaceop_created') {
+        dispatch({ type: 'ADD_WORKSPACEOP', workspaceOp: event.workspaceOp })
+      } else if (event.type === 'workspaceop_updated') {
+        dispatch({ type: 'UPDATE_WORKSPACEOP', workspaceOp: event.workspaceOp })
+      }
+    }
+    setWorkspaceOpHandler(handler)
+    return () => { setWorkspaceOpHandler(null) }
+  }, [])
+
+  // GitHub 操作 UI 事件
+  useEffect(() => {
+    const handler = (event: { type: 'githubop_created' | 'githubop_updated'; githubOp: any }) => {
+      if (event.type === 'githubop_created') {
+        dispatch({ type: 'ADD_GITHUBOP', githubOp: event.githubOp })
+      } else if (event.type === 'githubop_updated') {
+        dispatch({ type: 'UPDATE_GITHUBOP', githubOp: event.githubOp })
+      }
+    }
+    setGitHubOpHandler(handler)
+    return () => { setGitHubOpHandler(null) }
   }, [])
 
   // 新对话
@@ -838,8 +844,8 @@ export function ChatPage() {
         // 用 ref 读当前 convId，避免闭包捕获旧值
         if ((convIdRef.current || '@new') !== originConvId) return
         if (event.type === 'tool-call' && event.toolName === 'delegate_task') {
-          console.log(`[chat] 🤖 主AI → delegate_task`)
-          pushLog('🤖', `委托 tier: ${(event.toolInput as any)?.tier || 'balanced'}`, 'info')
+          console.log(`[chat] 主AI → delegate_task`)
+          pushLog('>', `委托 tier: ${(event.toolInput as any)?.tier || 'balanced'}`, 'info')
         }
         if (event.type === 'reasoning-delta') {
           if (!thinkingRef.current) thinkingStartRef.current = performance.now()
@@ -942,7 +948,7 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
           dispatch({ type: 'RETRY_CLEAR' })
         } else if (event.type === 'task-status') {
           const s = event.taskStatus || '?'
-          pushLog(s === 'running' ? '🔄' : s === 'completed' ? '✅' : '❌',
+          pushLog(s === 'running' ? '>' : s === 'completed' ? 'OK' : 'ERR',
             `Task ${(event.taskId || '').slice(0, 12)}: ${event.taskAgentName || ''} ${s}${event.text ? ` (${event.text.length}字)` : ''}`,
             s === 'completed' ? 'ok' : s === 'failed' ? 'error' : 'info')
         } else if (event.type === 'disclosure') {
@@ -1423,15 +1429,28 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
         /* 有消息：消息区 + 底部输入框 */
         <>
           <div className="flex-1 relative">
-            <div ref={scrollRef} className="absolute inset-0 overflow-y-auto custom-scrollbar">
-              <div className="chat-messages w-full px-4 py-4 space-y-4">
-                {messages.map((msg, i) => <ChatMessage key={i} msg={msg} />)}
-                {taskList.length > 0 && <TaskListCard tasks={taskList} />}
-                <div ref={endRef} />
-              </div>
-            </div>
-            {/* 回到底部按钮 — 在滚动容器外，始终固定在视口底部 */}
-            {showScrollBtn && (
+            <Virtuoso
+              key={convId || 'new'}
+              ref={virtuosoRef}
+              className="absolute inset-0 custom-scrollbar"
+              data={messages}
+              initialTopMostItemIndex={messages.length > 0 ? messages.length - 1 : 0}
+              followOutput="smooth"
+              atBottomStateChange={setAtBottom}
+              atBottomThreshold={120}
+              itemContent={(_, msg) => (
+                <div className="px-4 py-2">
+                  <ChatMessage key={msg.id} msg={msg} />
+                </div>
+              )}
+              components={{
+                Header: () => taskList.length > 0
+                  ? <div className="px-4 pt-4 pb-2"><TaskListCard tasks={taskList} /></div>
+                  : null,
+                Footer: () => <div className="h-4" />,
+              }}
+            />
+            {!atBottom && (
               <button
                 className="absolute bottom-4 right-4 z-10 rounded-full bg-primary text-primary-foreground shadow-lg p-2 hover:bg-primary/90 transition-all"
                 onClick={scrollToBottom}
