@@ -33,6 +33,13 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      # node-pty 原生模块由 node-gyp@9 构建，其 gyp 依赖 Python 标准库 distutils
+      # （Python 3.12 已移除），故固定 Python 3.11 供 node-gyp 使用
+      - name: Set up Python 3.11 (for node-gyp)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -46,6 +53,10 @@ jobs:
 
       - name: Package (${{ matrix.platform }})
         timeout-minutes: 30
+        env:
+          # node-gyp 显式使用 3.11（runner 默认 python 3.12+ 已无 distutils）
+          npm_config_python: python3.11
+          PYTHON: python3.11
         run: npx electron-builder --${{ matrix.platform }} --publish=never
 
       - name: Upload artifacts
