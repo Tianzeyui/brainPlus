@@ -6,6 +6,7 @@
   "description": "Stardust Desktop - Electron + React + TypeScript",
   "main": "dist-electron/main.js",
   "scripts": {
+    "postinstall": "node scripts/patch-electron-rebuild.cjs",
     "dev": "vite",
     "dev:rust": "cargo watch -w stardust-engine/src -x build",
     "dev:all": "npm run dev:rust & npm run dev",
