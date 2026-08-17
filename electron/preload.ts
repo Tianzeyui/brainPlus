@@ -258,6 +258,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     grant: (workspaceRoot: string, type: string, pattern: string) => ipcRenderer.invoke('perm:grant', workspaceRoot, type, pattern),
   },
 
+  updater: {
+    check: () => ipcRenderer.invoke('updater:check'),
+    download: () => ipcRenderer.invoke('updater:download'),
+    install: () => ipcRenderer.invoke('updater:install'),
+    onStatus: (cb: (status: any) => void) => {
+      const handler = (_event: any, status: any) => cb(status)
+      ipcRenderer.on('updater:status', handler)
+      return () => { ipcRenderer.removeListener('updater:status', handler) }
+    },
+  },
+
 	  sidecar: {
 	    call: (method: string, params?: any, timeout?: number) =>
 	      ipcRenderer.invoke('sidecar:call', method, params, timeout),

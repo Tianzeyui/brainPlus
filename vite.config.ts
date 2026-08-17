@@ -12,6 +12,8 @@ const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 
 const BUILD_YEAR = new Date().getFullYear()
 
 export default defineConfig({
+  // 相对路径 base：Electron 通过 file:// 加载时，绝对路径 /assets 会解析到磁盘根目录导致资源加载失败（图裂）
+  base: './',
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __BUILD_YEAR__: JSON.stringify(BUILD_YEAR),

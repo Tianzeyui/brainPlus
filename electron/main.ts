@@ -13,6 +13,7 @@ import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { initSidecar, getSidecar } from './main/sidecarManager.js'
 import { initWorkspace } from './main/workspace.js'
+import { initAutoUpdater } from './main/autoUpdater.js'
 
 // ====== IPC 模块导入 ======
 import { registerSidecarIpc } from './ipc/sidecarIpc.js'
@@ -127,6 +128,9 @@ app.whenReady().then(async () => {
   }
 
   createWindow()
+
+  // ---- 自动更新（正式打包环境） ----
+  initAutoUpdater()
 
   // ---- macOS Dock 图标 + 关于信息 ----
   if (process.platform === 'darwin' && appIcon && app.dock) {

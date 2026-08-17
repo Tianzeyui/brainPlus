@@ -67,7 +67,7 @@ export function Sidebar({ activeNav, onNavChange, collapsed, onToggleCollapse, o
       {/* 顶部：Logo + 折叠按钮 */}
       <div className={cn('flex items-center', collapsed ? 'flex-col gap-3 mb-3' : 'justify-between mb-6')}>
         <div className={cn('flex items-center gap-2', collapsed && 'flex-col')}>
-          <img src="/assets/icons/icon.svg" alt="Stardust" className="h-6 w-6 shrink-0 ml-2" />
+          <img src="assets/icons/icon.svg" alt="Stardust" className="h-6 w-6 shrink-0 ml-2" />
           {!collapsed && <span className="text-lg font-bold tracking-tight">Stardust</span>}
         </div>
         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground"
