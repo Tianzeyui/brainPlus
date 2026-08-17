@@ -6,7 +6,7 @@
  * - 所有更新返回新数组，不修改原对象
  * - 通过 id 查找消息，不是 index
  */
-import type { UIMessage, ToolCallStatus, AgentTimelineItem, MainTimelineItem, TerminalStatus } from '@/types/chat'
+import type { UIMessage, ToolCallStatus, MainTimelineItem, TerminalStatus } from '@/types/chat'
 
 let _nextId = 1
 export function nextMsgId() { return 'm' + (_nextId++) }
@@ -30,25 +30,21 @@ export type MessageAction =
   | { type: 'TOOL_BATCH_CREATE'; textBeforeTool: string; tools: ToolCallStatus[]; thinkingDuration?: number }
   | { type: 'TOOL_BATCH_APPEND'; tools: ToolCallStatus[] }
   | { type: 'TOOL_BATCH_RESULT'; toolName: string; output: string; ok: boolean }
-  | { type: 'TOOL_STREAM'; toolName: string; delta: string; done?: boolean }
-  // Agent 容器
-  | { type: 'AGENT_THINKING'; label: string; thinking: string; thinkingLoading: boolean; agentTimeline: AgentTimelineItem[] }
-  | { type: 'AGENT_TEXT'; label: string; content: string; agentTimeline: AgentTimelineItem[]; thinking: string }
-  | { type: 'AGENT_DONE'; label: string; content: string; agentTimeline: AgentTimelineItem[]; thinking: string }
+  | { type: 'TOOL_STREAM'; toolName: string; delta: string; done?: boolean; subtaskIndex?: number }
+  | { type: 'DELEGATE_SUBTASK_START'; toolName: string; subtaskIndex: number; tier: string; agentType: string }
+  | { type: 'DELEGATE_SUBTASK_END'; toolName: string; subtaskIndex: number; text: string; toolCalls: string[]; modelName: string }
+  // 任务清单 - 归属到最后一条 assistant 消息
+  | { type: 'UPDATE_TASK_LIST'; tasks: Array<{ id: string; title: string; status: string }> }
+  | { type: 'COMPLETE_RUNNING_TASKS' }
   // 流结束
   | { type: 'STREAM_END'; streamed: string; thinkingDuration?: number }
-  // 终端 / 文件操作 / Git 操作
+  // 终端 / 文件操作
   | { type: 'ADD_TERMINAL'; terminal: TerminalStatus }
   | { type: 'UPDATE_TERMINAL'; terminal: TerminalStatus }
   | { type: 'ADD_FILEOP'; fileOp: any }
   | { type: 'UPDATE_FILEOP'; fileOp: any }
-  | { type: 'ADD_GITOP'; gitOp: import('@/types/chat').GitOpStatus }
-  | { type: 'UPDATE_GITOP'; gitOp: import('@/types/chat').GitOpStatus }
   | { type: 'ADD_WORKSPACEOP'; workspaceOp: import('@/types/chat').WorkspaceOpStatus }
   | { type: 'UPDATE_WORKSPACEOP'; workspaceOp: import('@/types/chat').WorkspaceOpStatus }
-  | { type: 'ADD_GITHUBOP'; githubOp: import('@/types/chat').GitHubOpStatus }
-  | { type: 'UPDATE_GITHUBOP'; githubOp: import('@/types/chat').GitHubOpStatus }
-  | { type: 'UPSERT_TASK_SNAPSHOT'; taskSnapshot: import('@/types/chat').TaskSnapshot }
   // 清理旧工具内容
   | { type: 'CLEAR_OLD_TOOLS' }
   // ask_user 回复
@@ -128,7 +124,6 @@ export function messageReducer(state: UIMessage[], action: MessageAction): UIMes
             thinkingLoading: false,
             thinkingDuration: action.thinkingDuration ?? (last as any).thinkingDuration,
             mainTimeline: undefined,
-            agentTimeline: undefined,
             streaming: false,
           }]
         : state
@@ -153,8 +148,31 @@ export function messageReducer(state: UIMessage[], action: MessageAction): UIMes
             toolBatch: batch.map(t => {
               if (t.name === action.toolName) {
                 const raw = action.output
-                const truncated = raw.length > MAX ? raw.slice(0, MAX) + `\n... (${raw.length} chars)` : raw
-                return { ...t, status: action.ok ? 'done' as const : 'error' as const, result: raw.length > 50000 ? raw.slice(0, 50000) + `\n... (${raw.length} chars)` : raw, _output: truncated }
+                let delegateMeta: any = undefined
+                let result = raw
+                try {
+                  const parsed = JSON.parse(raw)
+                  if (parsed.__delegate) {
+                    delegateMeta = {
+                      tier: parsed.tier,
+                      agentType: parsed.agentType,
+                      modelName: parsed.modelName,
+                      toolCalls: parsed.toolCalls || [],
+                    }
+                    result = parsed.text
+                  } else if (parsed.__delegate_batch) {
+                    delegateMeta = {
+                      tier: 'balanced',
+                      agentType: 'general',
+                      modelName: '',
+                      toolCalls: [],
+                      subTasks: parsed.subTasks,
+                    }
+                    result = parsed.subTasks?.map((s: any) => `### 子任务 ${s.index + 1}\n${s.text}`).join('\n\n') || raw
+                  }
+                } catch {}
+                const truncated = result.length > MAX ? result.slice(0, MAX) + `\n... (${result.length} chars)` : result
+                return { ...t, status: action.ok ? 'done' as const : 'error' as const, result: result.length > 50000 ? result.slice(0, 50000) + `\n... (${result.length} chars)` : result, _output: truncated, delegateMeta }
               }
               return t
             }),
@@ -170,6 +188,18 @@ export function messageReducer(state: UIMessage[], action: MessageAction): UIMes
           ...m,
           toolBatch: ((m as any).toolBatch || []).map((t: any) => {
             if (t.name === action.toolName) {
+              // 子任务流式输入：路由到对应的 subTask
+              if (action.subtaskIndex != null && t.delegateMeta?.subTasks) {
+                const subs = t.delegateMeta.subTasks.map((s: any) =>
+                  s.index === action.subtaskIndex ? { ...s, text: (s.text || '') + action.delta } : s
+                )
+                return {
+                  ...t,
+                  result: (t.result || '') + action.delta,
+                  status: action.done ? 'done' as const : 'running' as const,
+                  delegateMeta: { ...t.delegateMeta, subTasks: subs },
+                }
+              }
               return {
                 ...t,
                 result: (t.result || '') + action.delta,
@@ -182,40 +212,73 @@ export function messageReducer(state: UIMessage[], action: MessageAction): UIMes
         state,
       )
 
-    case 'AGENT_THINKING': {
-      const lastId = state.length - 1
-      const last = state[lastId]
-      const hasContainer = last?.role === 'assistant' && last.modelName === action.label
-      if (hasContainer) {
-        return [...state.slice(0, lastId), { ...last, thinking: action.thinking, thinkingLoading: true, agentTimeline: action.agentTimeline as any }]
-      }
-      const base = (last?.role === 'assistant' && last.streaming)
-        ? [...state.slice(0, lastId), { ...last, streaming: false }]
-        : state
-      return [...base, { id: nextMsgId(), role: 'assistant', content: '', streaming: true, modelName: action.label, agentTimeline: action.agentTimeline as any, thinking: action.thinking, thinkingLoading: true }]
-    }
-    case 'AGENT_TEXT':
-    case 'AGENT_DONE': {
-      const lastId = state.length - 1
-      const last = state[lastId]
-      const streaming = action.type !== 'AGENT_DONE'
-      const hasContainer = last?.role === 'assistant' && last.modelName === action.label
-      if (hasContainer) {
-        return [...state.slice(0, lastId), {
-          ...last, content: action.content, streaming,
-          agentTimeline: action.agentTimeline as any, thinking: (action as any).thinking,
-          thinkingLoading: false,
-        }]
-      }
-      const base = (last?.role === 'assistant' && last.streaming)
-        ? [...state.slice(0, lastId), { ...last, streaming: false }]
-        : state
-      return [...base, {
-        id: nextMsgId(), role: 'assistant', content: action.content, streaming,
-        modelName: action.label, agentTimeline: action.agentTimeline as any,
-        thinking: (action as any).thinking, thinkingLoading: false,
-      }]
-    }
+    case 'DELEGATE_SUBTASK_START':
+      return replaceLast(
+        m => m.role === 'tool' && !!(m as any).toolBatch,
+        m => ({
+          ...m,
+          toolBatch: ((m as any).toolBatch || []).map((t: any) => {
+            if (t.name === action.toolName) {
+              const existing = t.delegateMeta?.subTasks || []
+              const subs = [...existing.filter((s: any) => s.index !== action.subtaskIndex), {
+                index: action.subtaskIndex,
+                tier: action.tier,
+                agentType: action.agentType,
+                modelName: '',
+                text: '',
+                toolCalls: [],
+              }]
+              return {
+                ...t,
+                status: 'running' as const,
+                delegateMeta: { tier: 'balanced', agentType: 'general', modelName: '', toolCalls: [], subTasks: subs },
+              }
+            }
+            return t
+          }),
+        }),
+        state,
+      )
+
+    case 'DELEGATE_SUBTASK_END':
+      return replaceLast(
+        m => m.role === 'tool' && !!(m as any).toolBatch,
+        m => ({
+          ...m,
+          toolBatch: ((m as any).toolBatch || []).map((t: any) => {
+            if (t.name === action.toolName) {
+              const subs = (t.delegateMeta?.subTasks || []).map((s: any) =>
+                s.index === action.subtaskIndex
+                  ? { ...s, text: action.text, toolCalls: action.toolCalls, modelName: action.modelName }
+                  : s
+              )
+              const allDone = subs.every((s: any) => s.text)
+              return {
+                ...t,
+                status: allDone ? 'done' as const : 'running' as const,
+                delegateMeta: { ...(t.delegateMeta || {}), subTasks: subs },
+              }
+            }
+            return t
+          }),
+        }),
+        state,
+      )
+
+    case 'UPDATE_TASK_LIST':
+      // 先清掉所有历史消息的 taskList，再写到当前最后一条 assistant
+      return replaceLast(
+        (m) => m.role === 'assistant',
+        (m) => ({ ...m, taskList: action.tasks }),
+        state.map(m => m.taskList ? { ...m, taskList: undefined } : m),
+      )
+
+    case 'COMPLETE_RUNNING_TASKS':
+      return replaceLast(
+        (m) => m.role === 'assistant' && (m.taskList?.some(t => t.status === 'running') ?? false),
+        (m) => ({ ...m, taskList: m.taskList?.map(t => t.status === 'running' ? { ...t, status: 'done' as const } : t) }),
+        state,
+      )
 
     case 'STREAM_END': {
       const lastId = state.length - 1
@@ -249,23 +312,6 @@ export function messageReducer(state: UIMessage[], action: MessageAction): UIMes
         state,
       )
 
-    case 'ADD_GITOP':
-      // 先清理同 id 的旧消息（防重复），再追加
-      return [...state.filter(m => !((m as any).gitOp?.id === action.gitOp.id)), { id: nextMsgId(), role: 'assistant', content: '', gitOp: action.gitOp, streaming: false } as UIMessage]
-
-    case 'UPDATE_GITOP': {
-      const updated = replaceLast(
-        m => !!(m as any).gitOp && (m as any).gitOp.id === action.gitOp.id,
-        m => ({ ...m, gitOp: { ...action.gitOp } }),
-        state,
-      )
-      // 找不到匹配消息时（极端边界情况），直接追加 done/error 消息
-      if (updated === state) {
-        return [...state, { id: nextMsgId(), role: 'assistant', content: '', gitOp: action.gitOp, streaming: false } as UIMessage]
-      }
-      return updated
-    }
-
     case 'CLEAR_OLD_TOOLS':
       if (state.length <= 20) return state
       const keepFrom = Math.max(0, state.length - 15)
@@ -287,41 +333,6 @@ export function messageReducer(state: UIMessage[], action: MessageAction): UIMes
         return [...state, { id: nextMsgId(), role: 'assistant', content: '', workspaceOp: action.workspaceOp, streaming: false } as UIMessage]
       }
       return updated
-    }
-
-    case 'ADD_GITHUBOP':
-      return [...state.filter(m => !((m as any).githubOp?.id === action.githubOp.id)), { id: nextMsgId(), role: 'assistant', content: '', githubOp: action.githubOp, streaming: false } as UIMessage]
-
-    case 'UPDATE_GITHUBOP': {
-      const updated = replaceLast(
-        m => !!(m as any).githubOp && (m as any).githubOp.id === action.githubOp.id,
-        m => ({ ...m, githubOp: { ...action.githubOp } }),
-        state,
-      )
-      if (updated === state) {
-        return [...state, { id: nextMsgId(), role: 'assistant', content: '', githubOp: action.githubOp, streaming: false } as UIMessage]
-      }
-      return updated
-    }
-
-    case 'UPSERT_TASK_SNAPSHOT':
-      // 同一轮对话中，替换最后一个 taskSnapshot 消息（避免重复积压）
-      return replaceLast(
-        m => !!(m as any).taskSnapshot,
-        m => ({ ...m, taskSnapshot: action.taskSnapshot }),
-        [...state, { id: nextMsgId(), role: 'assistant', content: '', taskSnapshot: action.taskSnapshot, streaming: false } as UIMessage],
-      )
-
-    case 'ADD_USER_REPLY':
-      return [...state, { id: nextMsgId(), role: 'user', content: action.content }]
-
-    case 'RETRY_CLEAR': {
-      // 截断重试：移除最后一条流式消息（含残缺文本），后续重试从新消息开始
-      const lastRetry = state[state.length - 1]
-      if (lastRetry?.role === 'assistant' && lastRetry.streaming) {
-        return state.slice(0, -1)
-      }
-      return state
     }
 
     case 'ABORT':

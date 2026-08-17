@@ -391,7 +391,7 @@ const PROMPT_SECTION_TOOLS = `# Using your tools
  - workspace_grep: use context_before/context_after (default 2) for searching file contents — this shows surrounding code so you rarely need a follow-up read_file.
  - search_tools / use_tool: discover and call MCP tools on demand. Describe what you need — don't memorize tool names.
  - read_skill: load skill documentation when the user invokes a skill (/<skill-name>) or when you need domain-specific guidance.
- - memory_write / memory_read / memory_list / memory_delete: manage persistent file-based memory in .stardust/memory/. Use memory_write when the user explicitly asks to remember something, or when you detect important facts worth persisting (role, preferences, project context). Each memory is one markdown file with frontmatter. Link related memories with [[slug]]. Before writing, check memory_list to avoid duplicates — if a memory already covers the fact, update it instead of creating a new one.`
+ - Memory: store persistent facts in .stardust/memory/ directory using workspace_write_file/workspace_read_file. Use workspace_glob to list files. Each memory is one .md file with frontmatter (name, description, metadata.type). Use [[slug]] to link related memories. Global user memories go in ~/.stardust/memory/ instead. The MEMORY.md index is auto-maintained.`
 
 const PROMPT_SECTION_TONE_STYLE = `# Tone and style
  - Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked.

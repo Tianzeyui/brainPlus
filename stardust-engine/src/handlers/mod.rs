@@ -4,7 +4,6 @@ pub mod chat;
 pub mod fs;
 pub mod mcp;
 pub mod gh;
-pub mod git;
 pub mod terminal;
 pub mod search;
 pub mod sandbox;
@@ -91,7 +90,6 @@ pub fn register_all() -> Registry {
     gh::register(&mut registry);
 
     // ====== git 操作 ======
-    git::register(&mut registry);
 
     // ====== 终端操作 ======
     terminal::register(&mut registry);

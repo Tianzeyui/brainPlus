@@ -6,7 +6,6 @@
  *
  * 用法：
  *   forwardToSidecar('fs:readFile')           // channel → method 名自动转换 fs:readFile → fs.readFile
- *   forwardToSidecar('git:exec', 'git.exec')  // 指定不同 method 名
  *   forwardStreamToSidecar('fs:find', ['event.fs.findResult', 'event.fs.findComplete'])
  */
 

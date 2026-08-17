@@ -140,14 +140,9 @@ export async function getMCPSdkTools(autoMode?: boolean, userId?: string): Promi
     const { registerSandboxTools } = await import('./tools/sandbox')
     const { registerWorkspaceTools } = await import('./tools/workspace')
     const { registerTerminalTool } = await import('./tools/terminal')
-    const { registerGitTools } = await import('./tools/git')
     const { registerWebFetchTool } = await import('./tools/webFetch')
     const { registerWebSearchTool } = await import('./tools/webSearch')
     const { registerVerifyTools } = await import('./tools/verify')
-    const { registerMemoryTools } = await import('./tools/memory')
-    const { registerIdeTools } = await import('./tools/ide')
-    const { registerGitHubTools } = await import('./tools/github')
-
     await registerMCPBusinessTools(tools)
     registerSkillTools(tools)
     registerAgentTools(tools, autoMode)
@@ -156,12 +151,8 @@ export async function getMCPSdkTools(autoMode?: boolean, userId?: string): Promi
     await registerSandboxTools(tools)
     await registerWorkspaceTools(tools)
     registerTerminalTool(tools)
-    registerGitTools(tools)
-    registerGitHubTools(tools)
     registerWebFetchTool(tools)
     registerWebSearchTool(tools)
-    registerMemoryTools(tools)
-    registerIdeTools(tools)
     // 注入插件 AI 工具
     const { pluginSystem } = await import('./pluginSystem')
     Object.assign(tools, pluginSystem.getPluginTools())
@@ -201,7 +192,7 @@ export function setFileOpUIHandler(handler: ((event: FileOpUIEvent) => void) | n
 export function getFileOpUIHandler() { return fileOpUIHandler }
 
 export interface ChatStreamEvent {
-  type: 'text-delta' | 'tool-call' | 'tool-result' | 'done' | 'compression' | 'disclosure' | 'system-log' | 'retry-clear' | 'agent-tool-call' | 'agent-tool-result' | 'agent-text-delta' | 'agent-done' | 'task-status' | 'reasoning-delta' | 'agent-reasoning-delta'
+  type: 'text-delta' | 'tool-call' | 'tool-result' | 'done' | 'compression' | 'disclosure' | 'system-log' | 'retry-clear' | 'task-status' | 'reasoning-delta'
   text?: string
   toolName?: string
   toolInput?: unknown
@@ -212,8 +203,6 @@ export interface ChatStreamEvent {
   compressedTokens?: number
   limit?: number
   summary?: string
-  // agent 事件字段
-  agentName?: string
   // task 事件字段
   taskStatus?: string; taskId?: string; taskAgentName?: string
   // disclosure 事件字段
@@ -260,10 +249,6 @@ export async function chat(
     }
   }
 
-  // 注入 Agent 流式回调，让 delegate_task 能把 Agent 执行过程"开窗"到主对话
-  const { setAgentStreamHandler } = await import('./tools/agent')
-  setAgentStreamHandler(onEvent as any || null)
-
   // Agent 行为规则：提前声明（pre-check 和后续流程共用）
   const { getPromptCode } = await import('@/lib/config')
   const agentRules = getPromptCode()
@@ -309,7 +294,7 @@ export async function chat(
         const fastReply = await delegateToModel('fast', userText, agentRules)
         if (fastReply?.result) {
           // 如果 fast 模型没有建议调工具 → 直接返回
-          const toolKeywords = ['workspace_', 'run_terminal', 'git_', 'web_search', 'web_fetch', 'read_skill', 'delegate_task']
+          const toolKeywords = ['workspace_', 'run_terminal', 'web_search', 'web_fetch', 'read_skill', 'delegate_task']
           const suggestsTools = toolKeywords.some(w => fastReply.result.includes(w))
           if (!suggestsTools) {
             onEvent?.({ type: 'text-delta', text: fastReply.result })
@@ -388,7 +373,7 @@ export async function chat(
 
   // Phase 1: 内置工具显式白名单——不靠命名猜测，声明即内置
   const CORE_TOOL_PREFIXES = [
-    'workspace_', 'git_', 'github_', 'sandbox_',               // 文件/Git/GitHub/沙箱
+    'workspace_', 'sandbox_',                           // 文件/沙箱
     'run_terminal', 'check_terminal', 'run_terminal_input', 'get_command_history', // 终端
     'web_fetch', 'web_search', 'search_bing', 'search_duckduckgo', // 网络
     'mcp_list', 'mcp_read', 'mcp_get',                          // MCP 网关
@@ -397,7 +382,6 @@ export async function chat(
     'plugin__',                                                 // 插件
     'read_skill', 'search_tools', 'use_tool',                  // 技能 + 按需激活
     'memory_',                                                   // 记忆
-    'ide_open_file',                                             // IDE 集成
   ]
   const isCoreTool = (name: string) => CORE_TOOL_PREFIXES.some(p => name.startsWith(p))
 
@@ -590,7 +574,7 @@ export async function chat(
     `Use update_task_list for complex tasks: create steps → mark running → mark done immediately.`,
     `Read code before changing it. Verify before reporting complete.`,
     `MCP tools (if any) are discoverable via search_tools.`,
-    `Memory: use memory_write/memory_read/memory_list/memory_delete to manage persistent memories about the user and project.`,
+    `Memory: files in .stardust/memory/ directory. Use workspace_read_file/workspace_write_file to manage them directly.`,
     enabledSkills.length > 0 ? `Installed skills: ${enabledSkills.map(s => s.name).join(', ')}` : '',
   ].filter(Boolean).join(' ')
 

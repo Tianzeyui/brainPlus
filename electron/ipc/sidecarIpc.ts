@@ -65,17 +65,6 @@ export function registerSidecarIpc(): void {
     }
   })
 
-  // ==================== Git → Rust Sidecar ====================
-  // git:exec 需要动态超时（push/pull 等网络操作可能超过默认 30s），直接注册 ipcMain.handle
-  ipcMain.handle('git:exec', async (_event, cwd: string, args: string[], timeoutSec?: number) => {
-    try {
-      const effectiveTimeout = ((timeoutSec || 30) + 2) * 1000 // 命令超时 + 2s buffer
-      const result = await getSidecar().call('git.exec', { cwd, args }, effectiveTimeout)
-      return result
-    } catch (e: any) {
-      return { success: false, error: e.message }
-    }
-  })
 
   // ==================== Terminal → Rust Sidecar ====================
   // terminal:execute 需要动态超时，不能使用 forwardToSidecar 的默认 30s

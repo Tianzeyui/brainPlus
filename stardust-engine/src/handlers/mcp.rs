@@ -13,7 +13,8 @@ use tokio::sync::mpsc;
 
 // ====== JSON-RPC 请求/响应辅助 ======
 
-/// 向 MCP 服务器发送 JSON-RPC 请求并读取一行响应
+/// 向 MCP 服务器发送 JSON-RPC 请求并读取匹配 id 的响应。
+/// 使用持久 BufReader 避免预读数据丢失；跳过服务器推送的通知行（无 id 字段）。
 fn mcp_send_json_rpc(conn: &mut McpConnection, method: &str, params: Value) -> Result<Value, String> {
     let id = conn.next_id;
     conn.next_id += 1;
@@ -32,13 +33,27 @@ fn mcp_send_json_rpc(conn: &mut McpConnection, method: &str, params: Value) -> R
         stdin.flush().map_err(|e| format!("flush error: {e}"))?;
     }
 
-    // 读 stdout
-    {
-        let stdout = conn.child.stdout.as_mut().ok_or("stdout not available")?;
-        let mut reader = BufReader::new(stdout);
+    // 读 stdout——复用持久 reader，跳过通知行
+    let reader = conn.reader.as_mut().ok_or("stdout reader not available")?;
+    loop {
         let mut line = String::new();
         reader.read_line(&mut line).map_err(|e| format!("read error: {e}"))?;
-        serde_json::from_str::<Value>(&line).map_err(|e| format!("parse error: {e}"))
+        let response: Value = serde_json::from_str(&line).map_err(|e| format!("parse error: {e}"))?;
+        // 跳过服务器通知（无 id 字段，非响应）
+        if response.get("id").is_none() {
+            continue;
+        }
+        // 只处理匹配 id 的响应（忽略过时的旧 id 的响应）
+        if response.get("id").and_then(|v| v.as_u64()) != Some(id) {
+            continue;
+        }
+        // 检查 JSON-RPC error
+        if let Some(err) = response.get("error") {
+            let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+            let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("unknown error");
+            return Err(format!("MCP error (code {code}): {msg}"));
+        }
+        return Ok(response);
     }
 }
 
@@ -46,6 +61,7 @@ fn mcp_send_json_rpc(conn: &mut McpConnection, method: &str, params: Value) -> R
 
 struct McpConnection {
     child: std::process::Child,
+    reader: Option<BufReader<std::process::ChildStdout>>, // 持久 reader，复用避免预读数据丢失
     next_id: u64,
     tools: Vec<Value>,
     resources: Vec<Value>,
@@ -137,6 +153,7 @@ async fn mcp_disconnect(req: crate::protocol::Request, _tx: mpsc::Sender<OutputL
     let mut conns = CONNECTIONS.lock().unwrap();
     if let Some(mut c) = conns.remove(server_id) {
         let _ = c.child.kill();
+        let _ = c.child.wait(); // 回收僵尸进程
     }
     Ok(serde_json::json!({"success": true}))
 }
@@ -145,6 +162,7 @@ async fn mcp_disconnect_all(_req: crate::protocol::Request, _tx: mpsc::Sender<Ou
     let mut conns = CONNECTIONS.lock().unwrap();
     for (_, mut c) in conns.drain() {
         let _ = c.child.kill();
+        let _ = c.child.wait(); // 回收僵尸进程
     }
     Ok(serde_json::json!({"success": true}))
 }
@@ -184,11 +202,19 @@ async fn mcp_get_all_tools(_req: crate::protocol::Request, _tx: mpsc::Sender<Out
     let conns = CONNECTIONS.lock().unwrap();
     let mut all_tools = Vec::new();
     let mut errors = Vec::new();
-    for (id, conn) in conns.iter() {
+    for (sid, conn) in conns.iter() {
         if conn.connected {
-            all_tools.extend(conn.tools.clone());
+            let server_name = &conn.server_name;
+            for t in &conn.tools {
+                let mut enriched = t.clone();
+                if let Some(obj) = enriched.as_object_mut() {
+                    obj.insert("serverName".to_string(), serde_json::json!(server_name));
+                    obj.insert("serverId".to_string(), serde_json::json!(sid));
+                }
+                all_tools.push(enriched);
+            }
         } else {
-            errors.push(serde_json::json!({"serverName": id, "error": "未连接"}));
+            errors.push(serde_json::json!({"serverName": sid, "error": "未连接"}));
         }
     }
     Ok(serde_json::json!({"tools": all_tools, "errors": errors}))
@@ -239,53 +265,83 @@ async fn connect_server(server_id: &str, config: &Value) -> Result<usize, String
         .spawn()
         .map_err(|e| format!("启动失败: {e}"))?;
 
-    let mut stdin = child.stdin.take().unwrap();
-    let stdout = child.stdout.take().unwrap();
-    let mut reader = BufReader::new(stdout);
+    // 握手和工具发现——失败时自动清理子进程，防止孤儿进程泄漏
+    let handshake_result = (|| -> Result<(Vec<Value>, BufReader<std::process::ChildStdout>, std::process::ChildStdin), String> {
+        let mut stdin = child.stdin.take().ok_or("stdin 不可用")?;
+        let stdout = child.stdout.take().ok_or("stdout 不可用")?;
+        let mut reader = BufReader::new(stdout);
 
-    // MCP handshake
-    let init_req = serde_json::json!({
-        "jsonrpc": "2.0", "id": 1u64, "method": "initialize",
-        "params": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "stardust-engine", "version": "0.1.0"}
+        let init_req = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1u64, "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "stardust-engine", "version": "0.1.0"}
+            }
+        });
+        writeln!(stdin, "{}", serde_json::to_string(&init_req).unwrap_or_default()).map_err(|e| format!("写入失败: {e}"))?;
+        stdin.flush().map_err(|e| format!("flush 失败: {e}"))?;
+
+        // 校验握手响应
+        let mut response_line = String::new();
+        reader.read_line(&mut response_line).map_err(|_| "MCP handshake 超时".to_string())?;
+        if let Ok(init_resp) = serde_json::from_str::<Value>(&response_line) {
+            if let Some(err) = init_resp.get("error") {
+                let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
+                return Err(format!("MCP 初始化被拒绝: {msg}"));
+            }
+            if let Some(ver) = init_resp["result"]["protocolVersion"].as_str() {
+                if ver != "2024-11-05" && ver != "2025-06-18" {
+                    tracing::warn!("[mcp] {} 协议版本 {} 不完全匹配，尝试继续", server_id, ver);
+                }
+            }
         }
-    });
-    writeln!(stdin, "{}", serde_json::to_string(&init_req).unwrap_or_default()).map_err(|e| format!("写入失败: {e}"))?;
-    stdin.flush().map_err(|e| format!("flush 失败: {e}"))?;
 
-    let mut response_line = String::new();
-    reader.read_line(&mut response_line).map_err(|_| "MCP handshake 超时".to_string())?;
+        let init_notif = serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized"});
+        writeln!(stdin, "{}", serde_json::to_string(&init_notif).unwrap_or_default()).map_err(|e| format!("写入失败: {e}"))?;
+        stdin.flush().map_err(|e| format!("flush 失败: {e}"))?;
 
-    // 发送 initialized 通知
-    let init_notif = serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized"});
-    writeln!(stdin, "{}", serde_json::to_string(&init_notif).unwrap_or_default()).map_err(|e| format!("写入失败: {e}"))?;
-    stdin.flush().map_err(|e| format!("flush 失败: {e}"))?;
+        let _ = writeln!(stdin, "{}", serde_json::json!({"jsonrpc":"2.0","id":2u64,"method":"tools/list"}));
+        let _ = stdin.flush();
 
-    // 获取 tools
-    let _ = writeln!(stdin, "{}", serde_json::json!({"jsonrpc":"2.0","id":2u64,"method":"tools/list"}));
-    let _ = stdin.flush();
+        let mut tools_line = String::new();
+        let tools: Vec<Value> = if reader.read_line(&mut tools_line).is_ok() {
+            serde_json::from_str::<Value>(&tools_line).ok()
+                .and_then(|v| v["result"]["tools"].as_array().cloned())
+                .unwrap_or_default()
+        } else { vec![] };
 
-    let mut tools_line = String::new();
-    let tools: Vec<Value> = if reader.read_line(&mut tools_line).is_ok() {
-        serde_json::from_str::<Value>(&tools_line).ok()
-            .and_then(|v| v["result"]["tools"].as_array().cloned())
-            .unwrap_or_default()
-    } else { vec![] };
+        Ok((tools, reader, stdin))
+    })();
 
-    // 恢复 stdout 到 child，供后续 handler 使用
-    let stdout_back = reader.into_inner();
-    child.stdout = Some(stdout_back);
+    match handshake_result {
+        Ok((tools, reader, stdin)) => {
+            child.stdin = Some(stdin); // 归还 stdin，供后续 mcp_send_json_rpc 写入
+            // spawn 线程持续 drain stderr，防止管道满导致死锁
+            if let Some(stderr) = child.stderr.take() {
+                let sid = server_id.to_string();
+                std::thread::spawn(move || {
+                    let buf = BufReader::new(stderr);
+                    for line in buf.lines() {
+                        if let Ok(l) = line { tracing::debug!("[mcp:{}:stderr] {}", sid, l); }
+                    }
+                });
+            }
 
-    let tool_count = tools.len();
-    let mut conns = CONNECTIONS.lock().unwrap();
-    conns.insert(server_id.to_string(), McpConnection {
-        child, next_id: 3, tools, resources: vec![], prompts: vec![],
-        server_name: name, connected: true,
-    });
-
-    Ok(tool_count)
+            let tool_count = tools.len();
+            let mut conns = CONNECTIONS.lock().unwrap();
+            conns.insert(server_id.to_string(), McpConnection {
+                child, reader: Some(reader), next_id: 3, tools, resources: vec![], prompts: vec![],
+                server_name: name, connected: true,
+            });
+            Ok(tool_count)
+        }
+        Err(e) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(e)
+        }
+    }
 }
 
 // ====== 更新服务器配置 ======

@@ -27,8 +27,6 @@ import { projectStore } from '@/lib/projectStore'
 import { pluginSystem } from '@/lib/pluginSystem'
 import { setSandboxOutputDir } from '@/lib/tools/sandbox'
 import { setWorkspaceRoots } from '@/lib/tools/workspace'
-import { setGitWorkspaceRoot, setGitOpHandler } from '@/lib/tools/git'
-import { setGitHubWorkspaceRoot, setGitHubOpHandler } from '@/lib/tools/github'
 import { setWorkspaceOpHandler } from '@/lib/tools/workspace'
 import { setTermWorkspaceRoot } from '@/lib/tools/terminal'
 import { killAll as killAllTerminals, initStreamListener, destroyStreamListener } from '@/lib/terminalManager'
@@ -189,7 +187,6 @@ export function ChatPage() {
   const [askUser, setAskUser] = useState<AskUserEvent | null>(null)
   const [askUserAnswer, setAskUserAnswer] = useState('')
   const [progressMsg, setProgressMsg] = useState('')
-  const [taskList, setTaskList] = useState<Array<{ id: string; title: string; status: string }>>([])
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [showWorkspace, setShowWorkspace] = useState(false)
@@ -233,7 +230,6 @@ export function ChatPage() {
   }, [workspace.root])
   const logId = useRef(0)
   const virtuosoRef = useRef<VirtuosoHandle>(null)
-  const taskListRef = useRef<Array<{ id: string; title: string; status: string }>>([])
   const pendingUpdateRef = useRef<(() => void) | null>(null)
   const rafRef = useRef(0)
   const streamTickRef = useRef(0)
@@ -258,7 +254,6 @@ export function ChatPage() {
     fn()
   }, [])
   useEffect(() => { messagesRef.current = messages }, [messages])
-  useEffect(() => { taskListRef.current = taskList }, [taskList])
 
   // 渲染同步，确保事件回调里读到最新 streaming 状态
   const streamingRef = useRef(false)
@@ -350,7 +345,6 @@ export function ChatPage() {
 
   // 同步当前工作区到沙箱
   useEffect(() => { setSandboxOutputDir(workspace.output || undefined) }, [workspace.output])
-  useEffect(() => { setWorkspaceRoots(workspace.root, workspace.output); setGitWorkspaceRoot(workspace.root); setGitHubWorkspaceRoot(workspace.root); setTermWorkspaceRoot(workspace.root) }, [workspace.root, workspace.output])
 
   // 展开选择器时刷新 + 外部点击关闭
   useEffect(() => {
@@ -374,29 +368,24 @@ export function ChatPage() {
         setProgressMsg(event.message + pct)
       } else if (event.type === 'notify_complete') {
         setProgressMsg('')
-        setTaskList(prev => prev.map(t => t.status === 'running' ? { ...t, status: 'done' } : t))
+        dispatch({ type: 'COMPLETE_RUNNING_TASKS' })
         pushLog('OK', event.message + (event.result ? ` -- ${event.result}` : ''), 'ok')
       } else if (event.type === 'update_task_list') {
-        setTaskList((prev) => {
-          const map = new Map(prev.map(t => [t.id, t]))
-          for (const t of event.tasks) {
-            const existing = map.get(t.id)
-            map.set(t.id, { ...existing, ...t, title: t.title || existing?.title || '' })
-          }
-          return Array.from(map.values())
-        })
-        // 同步发任务快照到聊天流
-        const currentTasks = Array.from(new Map(
-          [...(taskListRef.current || []), ...event.tasks].map(t => [t.id, t])
-        ).values())
-        dispatch({
-          type: 'UPSERT_TASK_SNAPSHOT',
-          taskSnapshot: { tasks: currentTasks, updatedAt: Date.now() },
-        })
+        dispatch({ type: 'UPDATE_TASK_LIST', tasks: event.tasks.map((t: any) => ({ id: t.id, title: t.title, status: t.status })) })
       }
     })
     return () => setAgentUIHandler(null)
   }, [])
+
+  // progressMsg 10 秒无更新自动消失
+  const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (progressTimerRef.current) clearTimeout(progressTimerRef.current)
+    if (progressMsg) {
+      progressTimerRef.current = setTimeout(() => setProgressMsg(''), 10000)
+    }
+    return () => { if (progressTimerRef.current) clearTimeout(progressTimerRef.current) }
+  }, [progressMsg])
 
   // 终端 UI 事件 + 流式输出监听
   useEffect(() => {
@@ -428,18 +417,6 @@ export function ChatPage() {
     return () => window.removeEventListener('stardust:fileop', handler as EventListener)
   }, [])
 
-  // Git 操作 UI 事件（直接回调模式，与 setTerminalUIHandler 同理）
-  useEffect(() => {
-    const handler = (event: { type: 'gitop_created' | 'gitop_updated'; gitOp: any }) => {
-      if (event.type === 'gitop_created') {
-        dispatch({ type: 'ADD_GITOP', gitOp: event.gitOp })
-      } else if (event.type === 'gitop_updated') {
-        dispatch({ type: 'UPDATE_GITOP', gitOp: event.gitOp })
-      }
-    }
-    setGitOpHandler(handler)
-    return () => { setGitOpHandler(null) }
-  }, [])
 
   // 工作区操作 UI 事件
   useEffect(() => {
@@ -454,18 +431,6 @@ export function ChatPage() {
     return () => { setWorkspaceOpHandler(null) }
   }, [])
 
-  // GitHub 操作 UI 事件
-  useEffect(() => {
-    const handler = (event: { type: 'githubop_created' | 'githubop_updated'; githubOp: any }) => {
-      if (event.type === 'githubop_created') {
-        dispatch({ type: 'ADD_GITHUBOP', githubOp: event.githubOp })
-      } else if (event.type === 'githubop_updated') {
-        dispatch({ type: 'UPDATE_GITHUBOP', githubOp: event.githubOp })
-      }
-    }
-    setGitHubOpHandler(handler)
-    return () => { setGitHubOpHandler(null) }
-  }, [])
 
   // 新对话
   const handleNewConv = useCallback(async () => {
@@ -821,7 +786,8 @@ export function ChatPage() {
       )
 
       let streamed = ''
-      setConsoleLog([]); setTaskList([]); setActivatedToolNames(new Set())
+      setConsoleLog([]); setActivatedToolNames(new Set())
+      setProgressMsg('')
       thinkingRef.current = ''
       thinkingStartRef.current = 0
       mainTimelineRef.current = []
@@ -831,8 +797,12 @@ export function ChatPage() {
       // 注册子 Agent 流式回调（delegate_task 实时输出）
       const { setToolStreamHandler } = await import('@/lib/tools/agent')
       setToolStreamHandler((e) => {
-        if (e.type === 'delta') {
-          dispatch({ type: 'TOOL_STREAM', toolName: e.toolName, delta: e.text })
+        if (e.type === 'subtask_start') {
+          dispatch({ type: 'DELEGATE_SUBTASK_START', toolName: e.toolName, subtaskIndex: e.subtaskIndex, tier: e.tier, agentType: e.agentType })
+        } else if (e.type === 'subtask_end') {
+          dispatch({ type: 'DELEGATE_SUBTASK_END', toolName: e.toolName, subtaskIndex: e.subtaskIndex, text: e.text, toolCalls: e.toolCalls, modelName: e.modelName })
+        } else if (e.type === 'delta') {
+          dispatch({ type: 'TOOL_STREAM', toolName: e.toolName, delta: e.text, subtaskIndex: e.subtaskIndex })
         } else if (e.type === 'done') {
           dispatch({ type: 'TOOL_STREAM', toolName: e.toolName, delta: '', done: true })
         }
@@ -973,7 +943,7 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
           mainTimelineRef.current = []
           toolBatchRef.current = []
           // AI 回复结束，未完成的任务自动标记为完成
-          setTaskList(prev => prev.map(t => t.status === 'running' ? { ...t, status: 'done' } : t))
+          dispatch({ type: 'COMPLETE_RUNNING_TASKS' })
           if (event.trace) {
             const t = event.trace
             const totalTok = t.inputTokens + t.outputTokens
@@ -1025,7 +995,7 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
       if (isAbort) {
         pushLog('STOP', '用户中断', 'info')
         setProgressMsg('')
-        setTaskList(prev => prev.map(t => t.status === 'running' ? { ...t, status: 'cancelled' } : t))
+        dispatch({ type: 'COMPLETE_RUNNING_TASKS' })
       } else {
         const msg = e.message || '网络连接失败'
         pushLog('ERR', msg, 'error')
@@ -1041,6 +1011,43 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
       const aiText = aiReply?.content?.slice(0, 200) || ''
       if (aiText) setTimeout(() => generateTitle(cid, userText, aiText), 1000)
     }
+
+    // 对话结束后异步提取关键信息存为记忆
+    setTimeout(async () => {
+        try {
+          const latestMsgs = messagesRef.current
+          const userMsgs = latestMsgs.filter(m => m.role === 'user')
+          const lastUser = userMsgs[userMsgs.length - 1]?.content?.slice(0, 500) || ''
+          const lastAssistant = latestMsgs.filter(m => m.role === 'assistant').pop()?.content?.slice(0, 1000) || ''
+          if (!lastUser || !lastAssistant) return
+
+          // 用 fast model 提取关键信息
+          const { getEnabledModel } = await import('@/lib/config')
+          const model = getEnabledModel()
+          if (!model) return
+          const { generateText } = await import('@/lib/api')
+          const prompt = `Extract key facts from this conversation that are worth remembering. Focus on user preferences, project context, decisions made, and technical details. Return ONLY a JSON array of facts, each with "name" (kebab-case slug), "description" (one-line summary), and "body" (full markdown with **Why:** and **How to apply:**). If nothing noteworthy, return empty array [].\n\nUser: ${lastUser}\n\nAssistant response summary: ${lastAssistant}`
+          const result = await generateText({
+            config: {
+              provider: model.name, modelId: model.selectedModel,
+              apiKey: model.apiKey, baseUrl: model.baseUrl || model.defaultBaseUrl,
+            },
+            prompt,
+            maxOutputTokens: 1024,
+          })
+          const facts = JSON.parse(result.text.replace(/```json\n?|```/g, '').trim())
+          if (Array.isArray(facts) && facts.length > 0) {
+            const { writeMemory, memoryExists } = await import('@/lib/memory/service')
+            for (const fact of facts) {
+              if (!fact.name || !fact.body) continue
+              const exists = await memoryExists(fact.name)
+              if (!exists) {
+                await writeMemory(fact.name, fact.description || fact.body.slice(0, 80), fact.body, 'feedback')
+              }
+            }
+          }
+        } catch {} // 静默失败，不影响用户体验
+      }, 3000)
   }, [input, loading, activeModel, messages, attachments, autoMode, convId, generateTitle])
 
   // @ 文件选择器
@@ -1441,12 +1448,12 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
               itemContent={(_, msg) => (
                 <div className="px-4 py-2">
                   <ChatMessage key={msg.id} msg={msg} />
+                  {msg.taskList && msg.taskList.length > 0 && (
+                    <div className="mt-2"><TaskListCard tasks={msg.taskList} /></div>
+                  )}
                 </div>
               )}
               components={{
-                Header: () => taskList.length > 0
-                  ? <div className="px-4 pt-4 pb-2"><TaskListCard tasks={taskList} /></div>
-                  : null,
                 Footer: () => <div className="h-4" />,
               }}
             />
@@ -1465,9 +1472,20 @@ dispatch({ type: 'TOOL_BATCH_CREATE', textBeforeTool: '', tools: toolBatchRef.cu
           {showConsole && <ChatConsole lines={consoleLog} onClose={() => setShowConsole(false)} />}
 
           {(statusText || progressMsg) && (
-            <div className="border-t border-border bg-muted/30 px-4 py-1 text-center text-[10px] text-muted-foreground/50">
-              {progressMsg && <Loader2 className="inline h-3 w-3 animate-spin mr-1" />}
-              {progressMsg || statusText}
+            <div className="border-t border-border bg-muted/30 px-4 py-1 flex items-center text-[10px] text-muted-foreground/50">
+              <span className="flex-1 text-center">
+                {progressMsg && <Loader2 className="inline h-3 w-3 animate-spin mr-1" />}
+                {progressMsg || statusText}
+              </span>
+              {progressMsg && (
+                <button
+                  className="ml-2 rounded p-0.5 hover:bg-muted/50 hover:text-muted-foreground transition-colors"
+                  onClick={() => setProgressMsg('')}
+                  title="关闭"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
           )}
 
@@ -1527,36 +1545,24 @@ function AttachmentChips({ attachments, onRemove }: { attachments: Attachment[];
 }
 
 function TaskListCard({ tasks }: { tasks: Array<{ id: string; title: string; status: string }> }) {
-  const [localTasks, setLocalTasks] = useState(tasks)
-  useEffect(() => { setLocalTasks(tasks) }, [tasks])
-
-  const toggleTask = (id: string) => {
-    setLocalTasks(prev => prev.map(t =>
-      t.id === id ? { ...t, status: t.status === 'done' ? 'pending' : 'done' } : t
-    ))
-  }
-
-  const doneCount = localTasks.filter(t => t.status === 'done').length
+  const doneCount = tasks.filter(t => t.status === 'done').length
 
   return (
-    <div className="flex gap-3">
-      <div className="flex-1 rounded-lg border border-border bg-card px-4 py-3">
-        <div className="flex items-center gap-2 mb-2">
-          <ListTodo className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs font-medium text-muted-foreground">任务进度 ({doneCount}/{localTasks.length})</span>
-        </div>
-        <div className="space-y-1">
-          {localTasks.map(t => (
-            <div key={t.id} className="flex items-center gap-2 text-xs cursor-pointer select-none"
-              onClick={() => toggleTask(t.id)} title="点击切换完成状态">
-              {t.status === 'done' ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-500" />
-              : t.status === 'running' ? <Loader2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground animate-spin" />
-              : t.status === 'cancelled' ? <X className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              : <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40 hover:text-muted-foreground" />}
-              <span className={`truncate ${t.status === 'done' ? 'text-muted-foreground line-through' : t.status === 'running' ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{t.title}</span>
-            </div>
-          ))}
-        </div>
+    <div className="rounded-lg border border-border bg-card px-4 py-3">
+      <div className="flex items-center gap-2 mb-2">
+        <ListTodo className="h-4 w-4 text-muted-foreground" />
+        <span className="text-xs font-medium text-muted-foreground">任务进度 ({doneCount}/{tasks.length})</span>
+      </div>
+      <div className="space-y-1">
+        {tasks.map(t => (
+          <div key={t.id} className="flex items-center gap-2 text-xs select-none">
+            {t.status === 'done' ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            : t.status === 'running' ? <Loader2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground animate-spin" />
+            : t.status === 'cancelled' ? <X className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            : <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/40" />}
+            <span className={`truncate ${t.status === 'done' ? 'text-muted-foreground line-through' : t.status === 'running' ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>{t.title}</span>
+          </div>
+        ))}
       </div>
     </div>
   )

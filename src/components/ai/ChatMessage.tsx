@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, memo } from 'react'
-import { Check, X, Shield, ShieldCheck, Cable, BookOpen, MessageSquare, FileText, Image, Zap, FolderOpen, Loader2, ChevronDown, IdCard, ExternalLink, Brain, Terminal, Search, Globe, Trash2, Bookmark, Layers, GitBranch, File, FilePlus, FilePenLine, FileSearch, FolderPlus, ListTodo, CheckCircle2, Circle } from 'lucide-react'
+import { Check, X, Shield, ShieldCheck, Cable, BookOpen, MessageSquare, FileText, Image, Zap, FolderOpen, Loader2, ChevronDown, ExternalLink, Brain, Terminal, Search, Globe, Trash2, Bookmark, Layers, File, FilePlus, FilePenLine, FileSearch } from 'lucide-react'
 import MarkdownPreview from '@uiw/react-markdown-preview'
-import type { UIMessage, ToolCallStatus, MessageAttachment, AgentToolCallEntry, AgentTimelineItem, TerminalStatus, GitOpStatus, WorkspaceOpStatus, GitHubOpStatus, TaskSnapshot } from '@/types/chat'
+import type { UIMessage, ToolCallStatus, MessageAttachment, AgentToolCallEntry, AgentTimelineItem, TerminalStatus, WorkspaceOpStatus } from '@/types/chat'
 import { useAuth } from '@/contexts/AuthContext'
 import type { FileOpRequest } from '@/lib/fileOpManager'
 import { confirm as confirmTerminal, reject as rejectTerminal, killTerminal } from '@/lib/terminalManager'
@@ -67,20 +67,8 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
     )
   }
 
-  if (msg.gitOp) {
-    return <GitOpBubble go={msg.gitOp} />
-  }
-
-  if (msg.githubOp) {
-    return <GitHubOpBubble gho={msg.githubOp} />
-  }
-
   if (msg.workspaceOp) {
     return <WorkspaceOpBubble wo={msg.workspaceOp} />
-  }
-
-  if (msg.taskSnapshot) {
-    return <TaskSnapshotBubble ts={msg.taskSnapshot} />
   }
 
   if (msg.fileOp) {
@@ -96,8 +84,6 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
         {batch.map(tc => {
           if (tc.name === 'check_terminal') return <CheckTerminalBubble key={tc.id} tc={tc} />
           if (HIDDEN_TOOLS.has(tc.name)) return null
-          if (tc.name.startsWith('git_')) return null // GitOpBubble 已承载
-          if (tc.name.startsWith('github_')) return null // GitHubOpBubble 已承载
           if (tc.name.startsWith('workspace_')) return null // WorkspaceOpBubble 已承载
           if (tc.name === 'web_search') return <SearchBubble key={tc.id} tc={tc} />
           if (tc.name === 'web_fetch') return <FetchBubble key={tc.id} tc={tc} />
@@ -112,17 +98,12 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
   if (msg.role === 'tool' && msg.toolCall) {
     if (msg.toolCall.name === 'check_terminal') return <CheckTerminalBubble tc={msg.toolCall} />
     if (HIDDEN_TOOLS.has(msg.toolCall.name)) return null
-    if (msg.toolCall.name.startsWith('git_')) return null // GitOpBubble 已承载
     // 搜索/抓取用自定义样式
     if (msg.toolCall.name === 'web_search') return <SearchBubble tc={msg.toolCall} />
     if (msg.toolCall.name === 'web_fetch') return <FetchBubble tc={msg.toolCall} />
-    if (msg.toolCall.name === 'delegate_task') return <DelegateBubble tc={msg.toolCall} />
+    if (msg.toolCall.name === 'delegate_task' || msg.toolCall.name === 'delegate_batch') return <DelegateBubble tc={msg.toolCall} />
     if (msg.toolCall.name.startsWith('memory_')) return <MemoryBubble tc={msg.toolCall} />
-    return msg.parentAgent ? (
-      <div className="ml-4 border-l-2 border-primary/20 pl-3 my-1">
-        <ToolBubble tc={msg.toolCall} />
-      </div>
-    ) : <ToolBubble tc={msg.toolCall} />
+    return <ToolBubble tc={msg.toolCall} />
   }
 
   return (
@@ -139,68 +120,6 @@ function ChatMessageInner({ msg }: ChatMessageProps) {
                   <AttachmentChip key={i} att={att} />
                 ))}
               </div>
-            )}
-          </div>
-        ) : msg.modelName?.startsWith('Agent:') ? (
-          // Agent 子对话输出：独立视觉容器 + 实时流式
-          <div className="rounded-lg border border-border bg-card overflow-x-hidden"
-            onClick={e => {
-              const t = e.target as HTMLElement
-              if (t.tagName === 'A' && (t as HTMLAnchorElement).href) {
-                e.preventDefault()
-                ;(window as any).electronAPI?.shell?.openExternal((t as HTMLAnchorElement).href)
-              }
-            }}
-          >
-            <div className="flex items-center gap-1.5 border-b border-border/50 px-3 py-1.5 bg-muted/30">
-              <MessageSquare className="h-3 w-3 text-primary/50" />
-              <span className="text-[11px] font-medium text-primary/70">{msg.modelName}</span>
-              {msg.streaming && <span className="text-[10px] text-muted-foreground/50">输出中...</span>}
-              <div className="flex-1" />
-            </div>
-            <div className="px-3 py-2">
-              <ThinkingBlock thinking={msg.thinking || ''} loading={msg.thinkingLoading} content={msg.content || ''} duration={msg.thinkingDuration} />
-              {msg.streaming && !msg.content && !msg.agentTimeline?.length && !msg.thinking && (
-                <div className="py-3 select-none">
-                  <div className="flex gap-[3px]">
-                    {Array.from({ length: 4 }, (_, i) => (
-                      <span
-                        key={i}
-                        className={`inline-block ${i % 2 === 0 ? 'bg-foreground' : 'bg-muted-foreground/50'}`}
-                        style={{
-                          width: '3px', height: '3px',
-                          animation: 'pixel-flicker 2s ease-in-out infinite',
-                          animationDelay: `${i * 0.18}s`,
-                          borderRadius: '0.5px',
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-              {/* 时间线模式：文字和工具调用按顺序穿插 */}
-              {msg.agentTimeline && msg.agentTimeline.length > 0 ? (
-                <div className="space-y-2">
-                  {msg.agentTimeline.map((item, i) =>
-                    item.type === 'text' ? (
-                      <MarkdownPreview key={i}                        source={item.content}                        style={{ fontSize: 14, backgroundColor: 'transparent', overflowWrap: 'break-word', wordBreak: 'break-word' }}
-                      />
-                    ) : (
-                      <AgentToolCallItem key={i} tc={{ name: item.name, brief: item.brief, status: item.status, output: item.output }} />
-                    )
-                  )}
-                </div>
-              ) : (
-                (!msg.streaming || msg.content) && (
-                  <ContentBlock
-                    source={msg.content || ''}
-                    style={{ fontSize: 14, backgroundColor: 'transparent', overflowWrap: 'break-word', wordBreak: 'break-word' }}
-                  />
-                )
-              )}
-            </div>
-            {msg.trace && !msg.streaming && (
-              <p className="px-3 pb-1.5 text-[10px] text-muted-foreground/40 select-none">{msg.trace}</p>
             )}
           </div>
         ) : (
@@ -281,6 +200,8 @@ function ToolBubble({ tc }: { tc: ToolCallStatus }) {
   const [expanded, setExpanded] = useState(false)
   const [sandboxExpanded, setSandboxExpanded] = useState(false)
   const hasResult = !!tc.result && tc.result.length > 0
+  const hasInput = tc.type === 'sandbox' && tc.input != null
+  const canToggle = (hasResult || hasInput) && tc.status !== 'running'
 
   // 工具完成时默认收起
   useEffect(() => {
@@ -290,75 +211,54 @@ function ToolBubble({ tc }: { tc: ToolCallStatus }) {
   return (
     <div className="flex gap-3 w-full">
       <div className="min-w-0 flex-1">
-        <div
-          className={`pt-0.5 pb-1.5 text-xs overflow-hidden w-full ${
-            isError
-              ? 'border-l-2 border-destructive/40 pl-2 text-destructive'
-              : ''
-          }`}
-        >
-          {/* 头部：icon + 标签/名称/状态 */}
-          <div className="flex items-start gap-2">
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          {/* 头部 */}
+          <div className={`flex items-center gap-2 border-b border-border/40 px-3 py-2 bg-muted/30 ${canToggle ? 'cursor-pointer select-none' : ''}`}
+            onClick={() => canToggle && setExpanded(!expanded)}>
             {isError ? (
-              <X className="h-4 w-4 shrink-0 text-destructive mt-0.5" />
+              <X className="h-3.5 w-3.5 shrink-0 text-destructive" />
+            ) : tc.status === 'running' ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground animate-spin" />
             ) : (
-              <style.icon className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
+              <style.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             )}
-            <div className="min-w-0 flex items-center gap-2 flex-wrap">
-              <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                <style.labelIcon className="h-3 w-3" />
-                {style.label}
-              </span>
-              <span className="font-mono font-medium text-[11px]">{tc.name}</span>
-              <span className={`text-[10px] ${isError ? 'text-destructive' : 'text-muted-foreground'}`}>
-                {isError ? '失败' : tc.status === 'running' ? '执行中' : '完成'}
-              </span>
-            </div>
+            <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+              <style.labelIcon className="h-3 w-3" />
+              {style.label}
+            </span>
+            <span className="font-mono text-[11px] truncate">{tc.name}</span>
+            <div className="flex-1" />
+            <span className={`text-[10px] shrink-0 ${isError ? 'text-destructive' : 'text-muted-foreground/50'}`}>
+              {isError ? '失败' : tc.status === 'running' ? '执行中' : '完成'}
+            </span>
+            {canToggle && (
+              <ChevronDown className={`h-3 w-3 text-muted-foreground/40 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            )}
           </div>
 
-          {/* 沙箱入参：默认收起 */}
-          {tc.type === 'sandbox' && tc.input != null && (() => {
-            const code = String(
-              typeof tc.input === 'object' && (tc.input as any).code
-                ? (tc.input as any).code
-                : JSON.stringify(tc.input)
-            )
-            return (
-              <>
-                <button
-                  className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                  onClick={() => setSandboxExpanded(!sandboxExpanded)}
-                >
-                  <ChevronDown className={`h-3 w-3 transition-transform ${sandboxExpanded ? 'rotate-180' : ''}`} />
-                  {sandboxExpanded ? '收起代码' : `展开代码（${code.length} 字符）`}
-                </button>
-                {sandboxExpanded && (
-                  <pre className="mt-1 max-h-60 overflow-auto custom-scrollbar rounded border border-border px-2 py-1 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all bg-muted/30 text-muted-foreground">
+          {/* 沙箱代码 & 结果 */}
+          {expanded && (
+            <div className="px-3 py-2 space-y-2">
+              {hasInput && (() => {
+                const code = String(
+                  typeof tc.input === 'object' && (tc.input as any).code
+                    ? (tc.input as any).code
+                    : JSON.stringify(tc.input)
+                )
+                return (
+                  <pre className="max-h-60 overflow-auto custom-scrollbar rounded bg-muted/20 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
                     {code}
                   </pre>
-                )}
-              </>
-            )
-          })()}
-
-          {/* 工具结果：默认收起，点击展开 */}
-          {hasResult && (
-            <>
-              <button
-                className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                onClick={() => setExpanded(!expanded)}
-              >
-                <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                {expanded ? '收起' : `展开结果（${(tc.result!.length / 1000).toFixed(1)}k 字符）`}
-              </button>
-              {expanded && (
-                <div className="mt-1 max-h-60 overflow-auto custom-scrollbar rounded border border-border max-w-full">
+                )
+              })()}
+              {hasResult && (
+                <div className="max-h-60 overflow-auto custom-scrollbar rounded bg-muted/20 p-2">
                   <MarkdownPreview source={formatToolResult(tc.result!, tc.type)}
-                    style={{ fontSize: 12, padding: '4px 8px', backgroundColor: 'transparent' }}
+                    style={{ fontSize: 12, backgroundColor: 'transparent' }}
                   />
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       </div>
@@ -369,7 +269,7 @@ function ToolBubble({ tc }: { tc: ToolCallStatus }) {
 // ====== 记忆工具专用组件 ======
 
 const MEMORY_TYPE_META: Record<string, { label: string; cls: string }> = {
-  user: { label: '用户', cls: 'text-amber-500/70 bg-amber-500/5 border-amber-500/15' },
+  user: { label: '用户', cls: 'text-blue-500/70 bg-amber-500/5 border-amber-500/15' },
   project: { label: '项目', cls: 'text-blue-500/70 bg-blue-500/5 border-blue-500/15' },
   reference: { label: '参考', cls: 'text-emerald-500/70 bg-emerald-500/5 border-emerald-500/15' },
 }
@@ -378,9 +278,9 @@ const MEMORY_TYPE_META: Record<string, { label: string; cls: string }> = {
 function MemoryCard({ children, muted }: { children: React.ReactNode; muted?: boolean }) {
   return (
     <div className="flex gap-2.5 max-w-full">
-      <div className={`w-px shrink-0 self-stretch rounded-full ${muted ? 'bg-border/30' : 'bg-border/50'}`} />
-      <div className={`min-w-0 flex-1 rounded-lg border px-3 py-2 ${
-        muted ? 'border-border/40 bg-card/30' : 'border-border/50 bg-card/40'
+      <div className={`w-px shrink-0 self-stretch rounded-full ${muted ? 'bg-border/20' : 'bg-border/40'}`} />
+      <div className={`min-w-0 flex-1 rounded-lg border px-3 py-2 shadow-sm ${
+        muted ? 'border-border/40 bg-card/30' : 'border-border bg-card'
       }`}>
         {children}
       </div>
@@ -671,62 +571,6 @@ function ThinkingBlock({ thinking, loading, content, duration }: { thinking: str
   )
 }
 
-/** 文件操作气泡（确认/结果展示） */
-function GitOpBubble({ go }: { go: GitOpStatus }) {
-  const [expanded, setExpanded] = useState(false)
-  const duration = go.endTime ? ((go.endTime - go.startTime) / 1000).toFixed(1) + 's' : ''
-
-  const icon = go.status === 'running'
-    ? <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin shrink-0" />
-    : go.status === 'error'
-    ? <X className="h-3.5 w-3.5 text-destructive shrink-0" />
-    : <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
-
-  const borderCls = go.status === 'running'
-    ? 'border-blue-500/30'
-    : go.status === 'error'
-    ? 'border-destructive/30'
-    : 'border-border'
-
-  const hasOutput = !!(go.output || go.error)
-
-  return (
-    <div className="flex gap-3">
-      <div className="min-w-0 flex-1">
-        <div className={`rounded-lg border ${borderCls} bg-card px-3 py-2 text-xs`}>
-          <div
-            className={`flex items-center gap-2 ${hasOutput ? 'cursor-pointer select-none' : ''}`}
-            onClick={() => hasOutput && setExpanded(!expanded)}
-          >
-            {icon}
-            <GitBranch className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="font-mono text-[11px] truncate">{go.command}</span>
-            <span className="text-[10px] text-muted-foreground/60 shrink-0 hidden sm:inline">{go.description}</span>
-            {duration && <span className="text-[10px] text-muted-foreground/40 shrink-0 ml-auto">{duration}</span>}
-            {hasOutput && (
-              <ChevronDown className={`h-3 w-3 text-muted-foreground shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-            )}
-          </div>
-          {expanded && go.output && isDiffContent(go.output) ? (
-            <div className="mt-2 max-h-80 overflow-auto">
-              <DiffBlock text={go.output} />
-            </div>
-          ) : expanded && go.output && (
-            <pre className="mt-2 text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-60 overflow-auto bg-muted/30 rounded p-2">
-              {go.output.length > 5000 ? go.output.slice(0, 5000) + `\n… (${go.output.length} 字符，已截断)` : go.output}
-            </pre>
-          )}
-          {expanded && go.error && (
-            <pre className="mt-2 text-[11px] font-mono text-destructive whitespace-pre-wrap break-all max-h-40 overflow-auto bg-destructive/5 rounded p-2">
-              {go.error}
-            </pre>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ====== WorkspaceOpBubble ======
 
 function WorkspaceIcon({ tool }: { tool: string }) {
@@ -734,142 +578,63 @@ function WorkspaceIcon({ tool }: { tool: string }) {
     case 'read_file': return <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
     case 'write_file': return <FilePlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
     case 'edit_file': return <FilePenLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-    case 'list_dir': return <FolderOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
     case 'glob': return <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
     case 'grep': return <FileSearch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-    case 'create_dir': return <FolderPlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-    case 'delete_file': return <Trash2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-    case 'append_file': return <FilePlus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-    case 'move_file': return <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-    case 'batch_edit': return <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-    case 'file_info': return <IdCard className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-    case 'compare_files': return <Layers className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-    case 'backup_file': case 'restore_file': return <Bookmark className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-    case 'run_tests': return <Zap className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
     default: return <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
   }
 }
 
 const WORKSPACE_LABELS: Record<string, string> = {
-  read_file: '读取', write_file: '写入', edit_file: '编辑', list_dir: '列出目录',
-  glob: '搜索文件', grep: '搜索内容', create_dir: '创建目录', delete_file: '删除', append_file: '追加',
+  read_file: '读取', write_file: '写入', edit_file: '编辑',
+  glob: '搜索文件', grep: '搜索内容',
 }
 
 function WorkspaceOpBubble({ wo }: { wo: WorkspaceOpStatus }) {
-  const [expanded, setExpanded] = useState(wo.tool === 'read_file' || wo.tool === 'write_file' || wo.tool === 'edit_file')
+  const [expanded, setExpanded] = useState(false)
   const duration = wo.endTime ? ((wo.endTime - wo.startTime) / 1000).toFixed(1) + 's' : ''
   const isDiff = wo.tool === 'write_file' || wo.tool === 'edit_file'
+  const hasOutput = !!wo.output || !!wo.error
 
-  const icon = wo.status === 'running'
-    ? <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin shrink-0" />
+  const statusIcon = wo.status === 'running'
+    ? <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin shrink-0" />
     : wo.status === 'error'
     ? <X className="h-3.5 w-3.5 text-destructive shrink-0" />
-    : <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
-
-  const borderCls = wo.status === 'running'
-    ? 'border-blue-500/30' : wo.status === 'error' ? 'border-destructive/30' : 'border-border'
+    : <Check className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
 
   const shortPath = wo.path.split('/').slice(-2).join('/') || wo.path
 
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3 max-w-full">
       <div className="min-w-0 flex-1">
-        <div className={`rounded-lg border ${borderCls} bg-card text-xs overflow-hidden`}>
-          <div className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
-            onClick={() => setExpanded(!expanded)}>
-            {icon}
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          {/* 头部 */}
+          <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2 bg-muted/30 cursor-pointer select-none"
+            onClick={() => wo.status !== 'running' && hasOutput && setExpanded(!expanded)}>
             <WorkspaceIcon tool={wo.tool} />
             <span className="text-[10px] text-muted-foreground/60 shrink-0">{WORKSPACE_LABELS[wo.tool] || wo.tool}</span>
             <span className="font-mono text-[11px] truncate flex-1" title={wo.path}>{shortPath}</span>
             {duration && <span className="text-[10px] text-muted-foreground/40 shrink-0">{duration}</span>}
-            <ChevronDown className={`h-3 w-3 text-muted-foreground shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-          </div>
-          {expanded && wo.output && !isDiff && (
-            <pre className="px-3 pb-2 text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-72 overflow-auto bg-muted/20">
-              {wo.output.length > 10000 ? wo.output.slice(0, 10000) + `\n… (${wo.output.length} 字符)` : wo.output}
-            </pre>
-          )}
-          {expanded && wo.output && isDiff && (
-            <div className="px-1 pb-1">
-              <DiffBlock text={wo.output} />
-            </div>
-          )}
-          {expanded && wo.error && (
-            <pre className="px-3 pb-2 text-[11px] font-mono text-destructive whitespace-pre-wrap break-all max-h-40 overflow-auto bg-destructive/5">
-              {wo.error}
-            </pre>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ====== TaskSnapshotBubble ======
-
-function TaskSnapshotBubble({ ts }: { ts: TaskSnapshot }) {
-  const doneCount = ts.tasks.filter(t => t.status === 'done' || t.status === 'completed').length
-  const runningTasks = ts.tasks.filter(t => t.status === 'running')
-  const total = ts.tasks.length
-
-  return (
-    <div className="flex gap-3">
-      <div className="min-w-0 flex-1">
-        <div className="rounded-lg border border-border/50 bg-card/50 px-3 py-1.5 text-xs">
-          <div className="flex items-center gap-2">
-            <ListTodo className="h-3 w-3 text-muted-foreground shrink-0" />
-            <span className="text-[10px] text-muted-foreground">任务进度</span>
-            <span className="text-[10px] font-medium">{doneCount}/{total}</span>
-            {runningTasks.length > 0 && (
-              <span className="text-[10px] text-muted-foreground/60 truncate">
-                {runningTasks.map(t => t.title).join(', ')}
-              </span>
+            {statusIcon}
+            {hasOutput && (
+              <ChevronDown className={`h-3 w-3 text-muted-foreground/40 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
             )}
           </div>
-        </div>
-      </div>
-    </div>
-  )
-}
 
-// ====== GitHubOpBubble ======
-
-function GitHubOpBubble({ gho }: { gho: GitHubOpStatus }) {
-  const [expanded, setExpanded] = useState(false)
-  const duration = gho.endTime ? ((gho.endTime - gho.startTime) / 1000).toFixed(1) + 's' : ''
-  const hasOutput = !!(gho.output || gho.error)
-
-  const icon = gho.status === 'running'
-    ? <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin shrink-0" />
-    : gho.status === 'error'
-    ? <X className="h-3.5 w-3.5 text-destructive shrink-0" />
-    : <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
-
-  const borderCls = gho.status === 'running'
-    ? 'border-blue-500/30' : gho.status === 'error' ? 'border-destructive/30' : 'border-border'
-
-  return (
-    <div className="flex gap-3">
-      <div className="min-w-0 flex-1">
-        <div className={`rounded-lg border ${borderCls} bg-card px-3 py-2 text-xs`}>
-          <div className={`flex items-center gap-2 ${hasOutput ? 'cursor-pointer select-none' : ''}`}
-            onClick={() => hasOutput && setExpanded(!expanded)}>
-            {icon}
-            <Cable className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="font-mono text-[11px] truncate">{gho.command}</span>
-            <span className="text-[10px] text-muted-foreground/60 shrink-0 hidden sm:inline">{gho.description}</span>
-            {duration && <span className="text-[10px] text-muted-foreground/40 shrink-0 ml-auto">{duration}</span>}
-            {hasOutput && <ChevronDown className={`h-3 w-3 text-muted-foreground shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />}
-          </div>
-          {expanded && gho.output && (
-            <pre className="mt-2 text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-60 overflow-auto bg-muted/30 rounded p-2">
-              {gho.output.length > 5000 ? gho.output.slice(0, 5000) + `\n... (${gho.output.length} 字符)` : gho.output}
-            </pre>
-          )}
-          {expanded && gho.error && (
-            <pre className="mt-2 text-[11px] font-mono text-destructive whitespace-pre-wrap break-all max-h-40 overflow-auto bg-destructive/5 rounded p-2">
-              {gho.error}
-            </pre>
+          {/* 输出区 */}
+          {hasOutput && (wo.status === 'running' || expanded) && (
+            <div className="px-3 py-2">
+              {wo.output && !isDiff && (
+                <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-72 overflow-auto rounded bg-muted/20 p-2">
+                  {wo.output.length > 10000 ? wo.output.slice(0, 10000) + `\n… (${wo.output.length} 字符)` : wo.output}
+                </pre>
+              )}
+              {wo.output && isDiff && <DiffBlock text={wo.output} />}
+              {wo.error && (
+                <pre className="text-[11px] font-mono text-destructive whitespace-pre-wrap break-all max-h-40 overflow-auto rounded bg-destructive/5 p-2">
+                  {wo.error}
+                </pre>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -880,7 +645,7 @@ function GitHubOpBubble({ gho }: { gho: GitHubOpStatus }) {
 // ====== FileOpBubble ======
 
 function FileOpBubble({ fo }: { fo: FileOpRequest }) {
-  const icon = fo.status === 'done' ? <Check className="h-3.5 w-3.5 text-green-500 shrink-0" />
+  const icon = fo.status === 'done' ? <Check className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
     : fo.status === 'error' ? <X className="h-3.5 w-3.5 text-destructive shrink-0" />
     : fo.status === 'rejected' ? <X className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
     : <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -888,22 +653,22 @@ function FileOpBubble({ fo }: { fo: FileOpRequest }) {
   return (
     <div className="flex gap-3 max-w-full">
       <div className="min-w-0 flex-1">
-        <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs overflow-hidden">
-          <div className="flex items-center gap-2">
-            {icon}
-            <span className="font-mono text-[11px] truncate">
-              {fo.type === 'write' ? <FilePenLine className="h-3 w-3 inline shrink-0" /> : <Trash2 className="h-3 w-3 inline shrink-0" />} {fo.path}
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2 bg-muted/30">
+            <span className="font-mono text-[11px] truncate flex-1">
+              {fo.type === 'write' ? <FilePenLine className="h-3.5 w-3.5 inline shrink-0 text-muted-foreground" /> : <Trash2 className="h-3.5 w-3.5 inline shrink-0 text-muted-foreground" />} {fo.path}
             </span>
-            <span className="text-[10px] text-muted-foreground shrink-0">
+            <span className="text-[10px] text-muted-foreground/50 shrink-0">
               {fo.status === 'pending_confirm' ? '待确认'
                 : fo.status === 'done' ? (fo.size != null ? `${fo.size} 字符` : fo.type === 'delete' ? '已删除' : '已完成')
                 : fo.status === 'error' ? '失败'
                 : '已拒绝'}
             </span>
+            {icon}
           </div>
 
           {fo.status === 'pending_confirm' && (
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <div className="flex items-center gap-2 px-3 py-2 flex-wrap">
               <button className="flex items-center gap-1 rounded bg-primary px-2.5 py-1 text-[10px] text-primary-foreground hover:bg-primary/90 transition-colors"
                 onClick={async () => { const { confirmFileOp } = await import('@/lib/fileOpManager'); confirmFileOp(fo.id) }}>
                 <Check className="h-3 w-3" />允许本次
@@ -920,7 +685,7 @@ function FileOpBubble({ fo }: { fo: FileOpRequest }) {
           )}
 
           {fo.status === 'error' && fo.error && (
-            <div className="mt-1 text-[10px] text-destructive font-mono">{fo.error}</div>
+            <div className="px-3 py-2 text-[10px] text-destructive font-mono">{fo.error}</div>
           )}
         </div>
       </div>
@@ -1065,26 +830,25 @@ function ContentBlock({ source, style }: { source: string; style?: any }) {
 /** 搜索气泡 */
 function SearchBubble({ tc }: { tc: ToolCallStatus }) {
   const query = typeof tc.input === 'object' && tc.input ? (tc.input as any).query || '' : ''
-  const [expanded, setExpanded] = useState(tc.status === 'running')
+  const [expanded, setExpanded] = useState(false)
+  const hasResult = !!tc.result
   return (
     <div className="flex gap-3 max-w-full">
       <div className="min-w-0 flex-1">
-        <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs overflow-hidden">
-          <div className="flex items-center gap-2">
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2 bg-muted/30 cursor-pointer select-none"
+            onClick={() => hasResult && tc.status !== 'running' && setExpanded(!expanded)}>
             <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="font-medium truncate">Search: {query}</span>
-            <span className="text-[10px] text-muted-foreground/50 shrink-0">{tc.status === 'done' ? 'Done' : tc.status}</span>
+            <span className="text-[11px] font-medium truncate flex-1">Search: {query}</span>
+            <span className="text-[10px] text-muted-foreground/50 shrink-0">{tc.status === 'done' ? '完成' : tc.status}</span>
+            {hasResult && (
+              <ChevronDown className={`h-3 w-3 text-muted-foreground/40 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            )}
           </div>
-          {tc.result && (
-            <>
-              <button className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                onClick={() => setExpanded(!expanded)}>
-                <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />{expanded ? 'Collapse' : `Results (${(tc.result.length / 1000).toFixed(1)}k)`}
-              </button>
-              {expanded && (
-                <div className="mt-1 max-h-48 overflow-auto rounded border border-border/50 p-2 text-[11px] whitespace-pre-wrap leading-relaxed text-muted-foreground">{tc.result}</div>
-              )}
-            </>
+          {tc.result && expanded && (
+            <div className="px-3 py-2">
+              <div className="max-h-48 overflow-auto rounded bg-muted/20 p-2 text-[11px] whitespace-pre-wrap leading-relaxed text-muted-foreground">{tc.result}</div>
+            </div>
           )}
         </div>
       </div>
@@ -1112,7 +876,7 @@ function CheckTerminalBubble({ tc }: { tc: ToolCallStatus }) {
   return (
     <div className="flex gap-3 w-full">
       <div className="min-w-0 flex-1">
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs">
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs shadow-sm">
           <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
             <Terminal className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
             {termId && <span className="font-mono text-[11px] text-zinc-400">{termId}</span>}
@@ -1136,26 +900,25 @@ function CheckTerminalBubble({ tc }: { tc: ToolCallStatus }) {
 
 function FetchBubble({ tc }: { tc: ToolCallStatus }) {
   const url = typeof tc.input === 'object' && tc.input ? (tc.input as any).url || '' : ''
-  const [expanded, setExpanded] = useState(tc.status === 'running')
+  const [expanded, setExpanded] = useState(false)
+  const hasResult = !!tc.result
   return (
     <div className="flex gap-3 max-w-full">
       <div className="min-w-0 flex-1">
-        <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs overflow-hidden">
-          <div className="flex items-center gap-2">
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2 bg-muted/30 cursor-pointer select-none"
+            onClick={() => hasResult && tc.status !== 'running' && setExpanded(!expanded)}>
             <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-            <span className="font-medium truncate">Fetch: {url}</span>
-            <span className="text-[10px] text-muted-foreground/50 shrink-0">{tc.status === 'done' ? 'Done' : tc.status}</span>
+            <span className="text-[11px] font-medium truncate flex-1">Fetch: {url}</span>
+            <span className="text-[10px] text-muted-foreground/50 shrink-0">{tc.status === 'done' ? '完成' : tc.status}</span>
+            {hasResult && (
+              <ChevronDown className={`h-3 w-3 text-muted-foreground/40 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            )}
           </div>
-          {tc.result && (
-            <>
-              <button className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                onClick={() => setExpanded(!expanded)}>
-                <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />{expanded ? 'Collapse' : `Content (${(tc.result.length / 1000).toFixed(1)}k)`}
-              </button>
-              {expanded && (
-                <div className="mt-1 max-h-48 overflow-auto rounded border border-border/50 p-2 text-[11px] whitespace-pre-wrap leading-relaxed text-muted-foreground">{tc.result}</div>
-              )}
-            </>
+          {tc.result && expanded && (
+            <div className="px-3 py-2">
+              <div className="max-h-48 overflow-auto rounded bg-muted/20 p-2 text-[11px] whitespace-pre-wrap leading-relaxed text-muted-foreground">{tc.result}</div>
+            </div>
           )}
         </div>
       </div>
@@ -1163,19 +926,100 @@ function FetchBubble({ tc }: { tc: ToolCallStatus }) {
   )
 }
 
-/** 子任务委托气泡 — 支持流式实时输出 */
+/** 子任务委托气泡 — 支持流式实时输出，单任务和批量任务通用 */
 function DelegateBubble({ tc }: { tc: ToolCallStatus }) {
-  const tier = typeof tc.input === 'object' && tc.input ? (tc.input as any).tier || 'balanced' : 'balanced'
-  const task = typeof tc.input === 'object' && tc.input ? (tc.input as any).task || '' : ''
-  const [expanded, setExpanded] = useState(tc.status === 'running')
+  const meta = tc.delegateMeta
+  const input = (typeof tc.input === 'object' && tc.input ? tc.input as any : {})
+  // 优先从 delegateMeta 取，回退到 input 解析
+  const tier = meta?.tier || input.tier || 'balanced'
+  const agentType = meta?.agentType || input.agentType || 'general'
+  const task = input.task || ''
+  const [expanded, setExpanded] = useState(false)
+  const [subExpanded, setSubExpanded] = useState<Set<number>>(new Set())
   const outputRef = useRef<HTMLDivElement>(null)
   const tierLabel: Record<string, string> = { fast: 'Fast', balanced: 'Std', powerful: 'Pro' }
+  const isBatch = tc.name === 'delegate_batch'
+  const subTasks = meta?.subTasks
 
-  // 去掉模型名头部 [model (tier)]\n
+  // agent 类型 → 图标
+  const agentStyle: Record<string, { icon: typeof Zap; label: string }> = {
+    general:  { icon: Zap,         label: 'Agent' },
+    explore:  { icon: Search,      label: 'Explore' },
+    plan:     { icon: Brain,       label: 'Plan' },
+    verify:   { icon: ShieldCheck, label: 'Verify' },
+  }
+
+  // 去掉模型名头部 [model (tier/agentType)]\n，提取工具调用行
   const displayText = (tc.result || '').replace(/^\[.+?\]\n?/, '')
+  const toolMatch = displayText.match(/_(.*?)调用工具: (.*?)_/)
+  const tools = meta?.toolCalls?.length ? meta.toolCalls : toolMatch ? toolMatch[2].split(',').map(s => s.trim()).filter(Boolean) : []
+  const cleanText = toolMatch ? displayText.replace(/_.*?_,?\n?/, '').trim() : displayText
 
-  // 提取工具调用行 `_调用工具: xxx_` → 染成特殊样式
-  const parts = displayText.split(/(_.*调用工具:.*_)/g)
+  const style = agentStyle[agentType] || agentStyle.general
+  const AgentIcon = style.icon
+
+  // 提取标题
+  const title = task ? task.replace(/[\n\r].*/, '').slice(0, 50) + (task.length > 50 ? '...' : '') : (isBatch ? `批量委派 (${subTasks?.length || 0} 个子任务)` : '子任务')
+
+  const toggleSub = (idx: number) => {
+    setSubExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
+  }
+
+  // 渲染单个子 agent 卡片（batch 复用）
+  const renderSubCard = (sub: { index: number; tier: string; agentType: string; text: string; toolCalls: string[]; modelName?: string }, i: number) => {
+    const s = agentStyle[sub.agentType] || agentStyle.general
+    const SubIcon = s.icon
+    const subTitle = `子任务 ${sub.index + 1}`
+    const subClean = sub.text.replace(/^\[.+?\]\n?/, '').trim()
+    const isRunning = !sub.text
+    const isExpanded = subExpanded.has(sub.index) || isRunning
+    return (
+      <div key={i} className="rounded-lg border border-border/60 overflow-hidden">
+        <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-muted/20 border-b border-border/30 cursor-pointer select-none"
+          onClick={() => !isRunning && subClean && toggleSub(sub.index)}>
+          <SubIcon className="h-3 w-3 text-muted-foreground shrink-0" />
+          <span className="text-[10px] font-medium text-foreground/70">{s.label}</span>
+          <span className="rounded bg-muted px-1 py-0 text-[9px] text-muted-foreground">{tierLabel[sub.tier] || sub.tier}</span>
+          <span className="flex-1 text-[10px] text-muted-foreground/60 truncate">{subTitle}</span>
+          {isRunning ? (
+            <span className="flex items-center gap-1 text-[9px] text-blue-500">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500" />
+              </span>
+              执行中
+            </span>
+          ) : (
+            <span className="text-[9px] text-muted-foreground/40">完成</span>
+          )}
+          {!isRunning && subClean && (
+            <ChevronDown className={`h-2.5 w-2.5 text-muted-foreground/30 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+          )}
+        </div>
+        {(isRunning || isExpanded) && (
+          <div className="px-2.5 py-1.5">
+            {subClean ? (
+              <div className="text-[11px] leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">{subClean}</div>
+            ) : (
+              <p className="text-[10px] text-muted-foreground/20 italic">等待输出...</p>
+            )}
+            {sub.toolCalls.length > 0 && (
+              <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                {sub.toolCalls.map((t, j) => (
+                  <span key={j} className="inline-flex items-center rounded bg-muted/50 px-1.5 py-0.5 text-[9px] text-muted-foreground/50">{t}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   // 流式时自动滚动
   useEffect(() => {
@@ -1184,72 +1028,77 @@ function DelegateBubble({ tc }: { tc: ToolCallStatus }) {
     }
   }, [tc.result, tc.status])
 
-  // 完成后收起
-  useEffect(() => {
-    if (tc.status === 'done') setExpanded(false)
-  }, [tc.status])
-
   return (
     <div className="flex gap-3 max-w-full">
-      <div className={tc.status === 'running' ? 'min-w-0 flex-1' : 'min-w-0'}>
-        <div className={`rounded-lg border px-3 py-2 text-xs overflow-hidden ${
-          tc.status === 'running' ? 'border-amber-500/30 bg-amber-500/[0.02] w-full' :
-          tc.status === 'error' ? 'border-destructive/30 bg-destructive/5' :
-          'border-border bg-card inline-block'
-        }`}>
-          {/* 头部 */}
-          <div className="flex items-center gap-2">
-            {tc.status === 'running' ? (
-              <Loader2 className="h-3.5 w-3.5 text-amber-500 animate-spin shrink-0" />
-            ) : (
-              <Zap className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-            )}
-            <span className="font-medium truncate">
-              {task ? task.slice(0, 50) + (task.length > 50 ? '...' : '') : '子任务'}
-            </span>
-            <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
+      <div className="min-w-0 flex-1">
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          {/* 头部：身份信息 */}
+          <div className="flex items-center gap-2 border-b border-border/40 px-3 py-2 bg-muted/30 cursor-pointer select-none"
+            onClick={() => tc.status !== 'running' && setExpanded(!expanded)}>
+            <AgentIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="text-[11px] font-medium text-foreground/80">{style.label}</span>
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
               {tierLabel[tier] || tier}
             </span>
-            <span className={`text-[10px] shrink-0 ${
-              tc.status === 'running' ? 'text-amber-500' :
-              tc.status === 'error' ? 'text-destructive' : 'text-muted-foreground'
-            }`}>
-              {tc.status === 'running' ? '执行中...' : tc.status === 'error' ? '失败' : '完成'}
-            </span>
+            <div className="flex-1" />
+            {tc.status === 'running' ? (
+              <span className="flex items-center gap-1 text-[10px] text-blue-500">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                </span>
+                执行中
+              </span>
+            ) : tc.status === 'error' ? (
+              <span className="text-[10px] text-destructive">失败</span>
+            ) : (
+              <span className="text-[10px] text-muted-foreground/50">完成</span>
+            )}
+            {tc.status !== 'running' && (
+              <ChevronDown className={`h-3 w-3 text-muted-foreground/40 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+            )}
           </div>
 
-          {/* 流式输出 / 折叠结果 */}
-          {displayText ? (
-            tc.status === 'running' ? (
-              <div ref={outputRef}
-                className="mt-1.5 max-h-64 overflow-auto custom-scrollbar rounded border border-border/50 p-2 text-[11px] leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
-                {parts.map((p, i) =>
-                  p.startsWith('_') && p.endsWith('_')
-                    ? <span key={i} className="inline-flex items-center gap-1 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1 py-0.5 text-[10px] font-medium">{p.replace(/_/g, '')}</span>
-                    : <span key={i}>{p}</span>
-                )}
+          {/* 子任务标题 */}
+          <div className="px-3 py-1.5 text-[11px] text-muted-foreground/70 truncate border-b border-border/30">
+            {title}
+          </div>
+
+          {/* 输出区 */}
+          <div className="px-3 py-2">
+            {isBatch && subTasks ? (
+              <div className="space-y-2">
+                {subTasks.map((sub, i) => renderSubCard(sub, i))}
               </div>
-            ) : (
-              <>
-                <button className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
-                  onClick={() => setExpanded(!expanded)}>
-                  <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                  {expanded ? '收起' : `展开结果 (${(displayText.length / 1000).toFixed(1)}k)`}
-                </button>
-                {expanded && (
-                  <div className="mt-1 max-h-48 overflow-auto custom-scrollbar rounded border border-border/50 p-2 text-[11px] leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
-                    {parts.map((p, i) =>
-                      p.startsWith('_') && p.endsWith('_')
-                        ? <span key={i} className="inline-flex items-center gap-1 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 px-1 py-0.5 text-[10px] font-medium">{p.replace(/_/g, '')}</span>
-                        : <span key={i}>{p}</span>
-                    )}
-                  </div>
-                )}
-              </>
-            )
-          ) : tc.status === 'running' ? (
-            <p className="mt-1.5 text-[10px] text-muted-foreground/40">等待输出...</p>
-          ) : null}
+            ) : tc.status === 'running' ? (
+              cleanText ? (
+                <div ref={outputRef}
+                  className="max-h-48 overflow-auto custom-scrollbar rounded bg-muted/20 p-2 text-[11px] leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
+                  {cleanText}
+                </div>
+              ) : (
+                <p className="text-[10px] text-muted-foreground/30 italic">等待输出...</p>
+              )
+            ) : tc.status === 'error' ? (
+              <p className="text-[10px] text-destructive/60">执行出错</p>
+            ) : expanded && cleanText ? (
+              <div className="max-h-48 overflow-auto custom-scrollbar rounded bg-muted/20 p-2 text-[11px] leading-relaxed whitespace-pre-wrap break-all text-muted-foreground">
+                {cleanText}
+              </div>
+            ) : null}
+          </div>
+
+          {/* 底部：工具调用 chips */}
+          {tools.length > 0 && (
+            <div className="flex items-center gap-1.5 border-t border-border/30 px-3 py-1.5 flex-wrap">
+              <span className="text-[9px] text-muted-foreground/30 mr-0.5">工具</span>
+              {tools.map((t, i) => (
+                <span key={i} className="inline-flex items-center rounded bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground/60">
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1272,7 +1121,7 @@ export function TerminalBubble({ ts, onConfirm, onReject, onCancel }: {
   return (
     <div className="flex gap-3 max-w-full">
       <div className="min-w-0 flex-1">
-        <div className="rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs overflow-hidden">
+        <div className="rounded-lg bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs overflow-hidden shadow-sm">
           {/* 头部 */}
           <div className="flex items-center gap-2">
             <Terminal className={`h-3.5 w-3.5 shrink-0 ${iconCls}`} />
@@ -1427,23 +1276,10 @@ function areEqual(prev: ChatMessageProps, next: ChatMessageProps) {
       p.terminal?.stdout === n.terminal?.stdout &&
       p.terminal?.stderr === n.terminal?.stderr
   }
-  // GitOp / WorkspaceOp / FileOp / TaskSnapshot 消息：状态变化需要重渲染
-  if (p.gitOp || n.gitOp) {
-    return p.gitOp?.status === n.gitOp?.status &&
-      p.gitOp?.output === n.gitOp?.output &&
-      p.gitOp?.error === n.gitOp?.error
-  }
-  if (p.githubOp || n.githubOp) {
-    if (p.githubOp?.status !== n.githubOp?.status) return false // 状态变化必须重渲染
-    return p.githubOp?.output === n.githubOp?.output && p.githubOp?.error === n.githubOp?.error
-  }
   if (p.workspaceOp || n.workspaceOp) {
     return p.workspaceOp?.status === n.workspaceOp?.status &&
       p.workspaceOp?.output === n.workspaceOp?.output &&
       p.workspaceOp?.error === n.workspaceOp?.error
-  }
-  if (p.taskSnapshot || n.taskSnapshot) {
-    return p.taskSnapshot?.updatedAt === n.taskSnapshot?.updatedAt
   }
   if (p.fileOp || n.fileOp) {
     return p.fileOp?.status === n.fileOp?.status &&

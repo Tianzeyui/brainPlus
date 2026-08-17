@@ -11,21 +11,12 @@ export function setAgentToolHandler(handler: ((event: any) => void) | null) {
   onAgentUIEvent = handler
 }
 
-/** AgentRunner 流式事件回调，由 chat() 注入 */
-let onAgentStreamEvent: ((event: { type: string; text?: string; toolName?: string; toolInput?: unknown; toolOutput?: unknown; agentName?: string }) => void) | null = null
-
-export function setAgentStreamHandler(handler: typeof onAgentStreamEvent) {
-  onAgentStreamEvent = handler
-}
-
-export function getAgentStreamHandler() {
-  return onAgentStreamEvent
-}
-
 // 工具级流式回调（用于 delegate_task/batch 实时输出）
-type ToolStreamEvent = { type: 'delta'; toolName: string; text: string }
-                     | { type: 'tool'; toolName: string; subTool: string }
+type ToolStreamEvent = { type: 'delta'; toolName: string; text: string; subtaskIndex?: number }
+                     | { type: 'tool'; toolName: string; subTool: string; subtaskIndex?: number }
                      | { type: 'done'; toolName: string }
+                     | { type: 'subtask_start'; toolName: string; subtaskIndex: number; tier: string; agentType: string }
+                     | { type: 'subtask_end'; toolName: string; subtaskIndex: number; text: string; toolCalls: string[]; modelName: string }
 
 let toolStreamHandler: ((e: ToolStreamEvent) => void) | null = null
 export function setToolStreamHandler(h: typeof toolStreamHandler) { toolStreamHandler = h }
@@ -155,38 +146,47 @@ export function registerAgentTools(tools: ToolMap, autoMode?: boolean) {
   if (autoMode) {
     tools['delegate_task'] = {
       description:
-        '将子任务委托给不同层级的模型处理。模型自主决定委托目标和层级，无需用户预配置 Agent。\n' +
-        'tier: "fast" 简单任务, "balanced" 日常, "powerful" 复杂推理。\n' +
-        '用于独立验证时：传入 task 包含"验证"/"verify"关键词，系统会自动注入对抗性验证提示词。\n' +
+        'Delegate a sub-task to a specialized agent. ' +
+        'agentType: general (full tools, default), explore (read-only search), plan (design/review, no edits), verify (find bugs, no edits). ' +
+        'tier: "fast" simple, "balanced" daily, "powerful" complex. ' +
+        'schema: optional JSON Schema for structured output validation. ' +
+        'budget: optional max token limit. ' +
+        'Use delegate_batch for parallel or pipeline multi-agent execution.\n' +
         'task 描述要具体，包含原始需求、改动文件列表、采用的方法。',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
-          tier: { type: 'string', enum: ['fast', 'balanced', 'powerful'], description: '目标模型层级' },
-          task: { type: 'string', description: '子任务描述（含必要上下文）' },
-          reason: { type: 'string', description: '委托原因（可选）' },
+          tier: { type: 'string', enum: ['fast', 'balanced', 'powerful'], description: 'Model tier, default balanced' },
+          agentType: { type: 'string', enum: ['general', 'explore', 'plan', 'verify'], description: 'Agent type: general (full tools), explore (read-only), plan (design), verify (find bugs)' },
+          task: { type: 'string', description: 'Sub-task description with context' },
+          schema: { type: 'object', description: 'Optional JSON Schema for structured output' },
+          budget: { type: 'number', description: 'Optional token budget limit' },
         },
         required: ['task'],
       }),
-      execute: async (args: { tier?: string; task: string; _toolName?: string }) => {
+      execute: async (args: { tier?: string; agentType?: string; task: string; schema?: any; budget?: number; _toolName?: string }) => {
         const toolName = args._toolName || 'delegate_task'
         try {
-          const isVerification = /(验证|verify|verification|test.*pass|check.*correct|review.*code)/i.test(args.task)
-          const systemContext = isVerification
-            ? (await import('./verify')).VERIFICATION_SYSTEM_PROMPT
-            : undefined
-
-          const { delegateByTier } = await import('../orchestrator')
-          return await delegateByTier(
-            (args.tier as 'fast' | 'balanced' | 'powerful') || 'balanced',
-            args.task,
-            systemContext || undefined,
-            {
+          const { delegateTask } = await import('../orchestrator')
+          const result = await delegateTask(args.task, {
+            tier: (args.tier as any) || 'balanced',
+            agentType: (args.agentType as any) || 'general',
+            schema: args.schema,
+            budget: args.budget,
+            stream: {
               text: (d: string) => emitToolStream({ type: 'delta', toolName, text: d }),
               toolCall: (n: string) => emitToolStream({ type: 'tool', toolName, subTool: n }),
               done: () => emitToolStream({ type: 'done', toolName }),
             },
-          )
+          })
+          return JSON.stringify({
+            __delegate: true,
+            tier: args.tier || 'balanced',
+            agentType: args.agentType || 'general',
+            modelName: result.modelName,
+            toolCalls: result.toolCalls || [],
+            text: result.text,
+          })
         } catch (e: any) {
           return `委托失败: ${e.message}`
         }
@@ -195,18 +195,21 @@ export function registerAgentTools(tools: ToolMap, autoMode?: boolean) {
 
     tools['delegate_batch'] = {
       description:
-        '并行委托多个子任务给不同层级的模型并行执行。tasks: [{ tier, task }, ...]。' +
-        '适合无依赖关系的独立子任务。',
+        'Execute multiple sub-tasks in parallel or pipeline mode. ' +
+        'mode: parallel (default, independent tasks run simultaneously) or pipeline (sequential, each stage gets previous results as context). ' +
+        'Each task supports tier, agentType, schema, and budget.',
       inputSchema: jsonSchema({
         type: 'object',
         properties: {
+          mode: { type: 'string', enum: ['parallel', 'pipeline'], description: 'Execution mode: parallel (default) or pipeline (sequential with context)' },
           tasks: {
             type: 'array',
             items: {
               type: 'object',
               properties: {
-                tier: { type: 'string', enum: ['fast', 'balanced', 'powerful'], description: '目标模型层级' },
-                task: { type: 'string', description: '子任务描述' },
+                tier: { type: 'string', enum: ['fast', 'balanced', 'powerful'], description: 'Model tier' },
+                agentType: { type: 'string', enum: ['general', 'explore', 'plan', 'verify'], description: 'Agent type' },
+                task: { type: 'string', description: 'Sub-task description' },
               },
               required: ['task'],
             },
@@ -214,29 +217,42 @@ export function registerAgentTools(tools: ToolMap, autoMode?: boolean) {
         },
         required: ['tasks'],
       }),
-      execute: async (args: { tasks: Array<{ tier?: string; task: string }>; _toolName?: string }) => {
+      execute: async (args: { mode?: string; tasks: Array<{ tier?: string; agentType?: string; task: string }>; _toolName?: string }) => {
         const toolName = args._toolName || 'delegate_batch'
+        const mode = (args.mode || 'parallel') as 'parallel' | 'pipeline'
         try {
-          const { delegateByTier } = await import('../orchestrator')
-          emitToolStream({ type: 'delta', toolName, text: `并行执行 ${args.tasks.length} 个子任务...\n\n` })
-          const results = await Promise.all(
-            args.tasks.map((t, i) =>
-              delegateByTier(
-                (t.tier as 'fast' | 'balanced' | 'powerful') || 'balanced',
-                t.task,
-                undefined,
-                {
-                  text: (d: string) => emitToolStream({ type: 'delta', toolName, text: d }),
-                  toolCall: (n: string) => emitToolStream({ type: 'tool', toolName, subTool: n }),
-                  done: () => {},
-                },
-              ).catch(e => `[${i + 1}] 失败: ${e.message}`)
-            )
+          const { delegateBatch } = await import('../orchestrator')
+          const results = await delegateBatch(
+            args.tasks.map(t => ({ task: t.task, tier: t.tier, agentType: (t.agentType as any) })),
+            mode,
+            {
+              stream: {
+                text: (d: string) => emitToolStream({ type: 'delta', toolName, text: d }),
+                toolCall: (n: string) => emitToolStream({ type: 'tool', toolName, subTool: n }),
+                done: () => {},
+                subtaskStart: (idx, tier, agentType) =>
+                  emitToolStream({ type: 'subtask_start', toolName, subtaskIndex: idx, tier, agentType }),
+                subtaskEnd: (idx, text, toolCalls, modelName) =>
+                  emitToolStream({ type: 'subtask_end', toolName, subtaskIndex: idx, text, toolCalls, modelName }),
+                subtaskDelta: (idx, delta) =>
+                  emitToolStream({ type: 'delta', toolName, text: delta, subtaskIndex: idx }),
+              },
+            },
           )
           emitToolStream({ type: 'done', toolName })
-          return results.map((r, i) => `### 子任务 ${i + 1}\n${r}`).join('\n\n')
+          return JSON.stringify({
+            __delegate_batch: true,
+            subTasks: results.map((r, i) => ({
+              index: i,
+              tier: args.tasks[i]?.tier || 'balanced',
+              agentType: args.tasks[i]?.agentType || 'general',
+              modelName: r.modelName,
+              toolCalls: r.toolCalls || [],
+              text: r.text,
+            })),
+          })
         } catch (e: any) {
-          return `并行委托失败: ${e.message}`
+          return `委托失败: ${e.message}`
         }
       },
     }

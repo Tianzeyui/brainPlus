@@ -10,3 +10,6 @@ cc-haha-main
 
 # Rust Sidecar
 stardust-engine/target/
+
+# 本地工作区配置（命令权限白名单等，个人本地状态不入库）
+.stardust/

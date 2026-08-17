@@ -11,7 +11,8 @@ export async function registerMCPBusinessTools(tools: ToolMap): Promise<number> 
 
   for (const t of mcpTools) {
     const safeName = (t.serverName + '__' + t.name).replace(/[^a-zA-Z0-9_-]/g, '_')
-    const hasValidSchema = t.inputSchema && (t.inputSchema as any).type === 'object'
+    const hasValidSchema = t.inputSchema && typeof (t.inputSchema as any) === 'object'
+      && Object.keys(t.inputSchema as any).length > 0
     const schema = hasValidSchema
       ? t.inputSchema
       : { type: 'object', properties: {}, additionalProperties: true }

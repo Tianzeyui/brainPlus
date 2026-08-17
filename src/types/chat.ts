@@ -1,5 +1,20 @@
 export type ToolType = 'sandbox' | 'skill' | 'agent' | 'mcp' | 'gateway' | 'workspace' | 'delegate'
 
+export interface DelegateMeta {
+  tier: string
+  agentType: string
+  modelName: string
+  toolCalls: string[]
+  subTasks?: Array<{
+    index: number
+    tier: string
+    agentType: string
+    modelName: string
+    text: string
+    toolCalls: string[]
+  }>
+}
+
 export interface ToolCallStatus {
   id: string
   name: string
@@ -7,6 +22,7 @@ export interface ToolCallStatus {
   status: 'running' | 'done' | 'error'
   input?: unknown
   result?: string
+  delegateMeta?: DelegateMeta
 }
 
 export interface MessageAttachment {
@@ -32,18 +48,6 @@ export type MainTimelineItem =
   | { type: 'thinking'; content: string }
   | { type: 'text'; content: string }
 
-/** Git 操作状态 */
-export interface GitOpStatus {
-  id: string
-  command: string          // 如 'git status', 'git commit -m "fix"', 'git push origin main'
-  description: string      // 简短描述，如 '查看工作区状态'
-  status: 'running' | 'done' | 'error'
-  output?: string          // git 命令输出（stdout）
-  error?: string           // 错误信息（stderr）
-  startTime: number
-  endTime?: number
-}
-
 /** 工作区操作状态 */
 export interface WorkspaceOpStatus {
   id: string
@@ -68,29 +72,13 @@ export interface UIMessage {
   attachments?: MessageAttachment[]
   modelName?: string
   trace?: string  // 可观测性信息
-  parentAgent?: string  // 子 Agent 标签，工具消息渲染到 Agent 容器内
   toolBatch?: ToolCallStatus[]          // 并行工具调用组
-  agentToolCalls?: AgentToolCallEntry[]  // 保留兼容
   agentTimeline?: AgentTimelineItem[]    // 时间线：文字+工具调用按顺序穿插
   mainTimeline?: MainTimelineItem[]     // 主对话时间线：thinking+text 按实际发生顺序
   terminal?: TerminalStatus             // 终端命令状态
   fileOp?: FileOpRequest               // 文件操作请求
-  gitOp?: GitOpStatus                  // Git 操作状态
-  githubOp?: GitHubOpStatus            // GitHub 操作状态
   workspaceOp?: WorkspaceOpStatus      // 工作区操作状态
-  taskSnapshot?: TaskSnapshot          // 任务列表快照
-}
-
-/** GitHub 操作状态 */
-export interface GitHubOpStatus {
-  id: string
-  command: string
-  description: string
-  status: 'running' | 'done' | 'error'
-  output?: string
-  error?: string
-  startTime: number
-  endTime?: number
+  taskList?: Array<{ id: string; title: string; status: string }>  // 归属于此消息的任务清单
 }
 
 /** 任务列表面板快照 */

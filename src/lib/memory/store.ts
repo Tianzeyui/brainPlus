@@ -54,16 +54,15 @@ function parseFrontmatter(content: string): { meta: Record<string, any>; body: s
 
 /** 构建 frontmatter 字符串 */
 function buildFrontmatter(entry: Omit<MemoryEntry, 'links' | 'updatedAt'>): string {
-  const lines = [
+  const lines: string[] = [
     '---',
     `name: ${entry.name}`,
     `description: ${entry.description}`,
     'metadata:',
     `  type: ${entry.metadata.type}`,
-    '---',
-    '',
-    entry.body,
   ]
+  if ((entry as any).expiresAt) lines.push(`expires_at: ${(entry as any).expiresAt}`)
+  lines.push('---', '', entry.body)
   return lines.join('\n') + '\n'
 }
 
@@ -116,12 +115,20 @@ async function writeIndex(dirPath: string, entries: MemoryIndex[]): Promise<void
   await fs().writeFile(indexPath, content)
 }
 
-export function createMemoryStore(getProjectPath: () => string | null): MemoryStore {
-  function memoryDir(): string {
-    const pp = getProjectPath()
-    if (!pp) throw new Error('未选择项目')
-    return `${pp}/${MEMORY_DIR}`
-  }
+/** 同步 STARDUST.md 到项目根目录 */
+async function syncToRoot(getProjectPath: () => string | null, entries: MemoryIndex[]): Promise<void> {
+  const pp = getProjectPath()
+  if (!pp) return
+  const rootPath = `${pp}/STARDUST.md`
+  const content = entries
+    .map(e => `- [${e.title}](${MEMORY_DIR}/${e.name}.md) — ${e.hook}`)
+    .join('\n') + '\n'
+  await fs().writeFile(rootPath, content).catch(() => {})
+}
+
+/** 创建记忆存储，可指定自定义基础目录 */
+function createStore(baseDir: () => string, getProjectRoot?: () => string | null): MemoryStore {
+  function memoryDir(): string { return baseDir() }
 
   return {
     async list(): Promise<MemoryIndex[]> {
@@ -155,6 +162,7 @@ export function createMemoryStore(getProjectPath: () => string | null): MemorySt
           body: parsed.body.trim(),
           links,
           updatedAt: stat.success && stat.stat ? new Date(stat.stat.mtime).getTime() : Date.now(),
+          expiresAt: parsed.meta.expires_at ? Number(parsed.meta.expires_at) : undefined,
         }
       } catch {
         return null
@@ -180,6 +188,7 @@ export function createMemoryStore(getProjectPath: () => string | null): MemorySt
         entries.push({ name: entry.name, title, hook: entry.description })
       }
       await writeIndex(dir, entries)
+      if (getProjectRoot) await syncToRoot(getProjectRoot, entries)
     },
 
     async delete(name: string): Promise<void> {
@@ -195,10 +204,23 @@ export function createMemoryStore(getProjectPath: () => string | null): MemorySt
       // 更新 MEMORY.md 索引
       const entries = (await readIndex(dir)).filter(e => e.name !== name)
       await writeIndex(dir, entries)
+      if (getProjectRoot) await syncToRoot(getProjectRoot, entries)
     },
 
     async getInjectionText(): Promise<string | null> {
       try {
+        // 优先读项目根目录的 STARDUST.md，fallback 到 .stardust/memory/MEMORY.md
+        const pp = getProjectRoot?.()
+        if (pp) {
+          for (const name of ['STARDUST.md', 'MEMORY.md']) {
+            const rootPath = `${pp}/${name}`
+            const rootExists = await fs().exists(rootPath)
+            if (rootExists) {
+              const result = await fs().readFile(rootPath)
+              if (result.success && result.content?.trim()) return result.content.trim()
+            }
+          }
+        }
         const dir = memoryDir()
         const indexPath = `${dir}/${INDEX_FILE}`
         const exists = await fs().exists(indexPath)
@@ -211,5 +233,27 @@ export function createMemoryStore(getProjectPath: () => string | null): MemorySt
         return null
       }
     },
+
   }
+}
+
+/** 项目级记忆存储（.stardust/memory/） */
+export function createMemoryStore(getProjectPath: () => string | null): MemoryStore {
+  return createStore(
+    () => {
+      const pp = getProjectPath()
+      if (!pp) throw new Error('未选择项目')
+      return `${pp}/${MEMORY_DIR}`
+    },
+    getProjectPath,
+  )
+}
+
+/** 全局用户记忆存储（~/.stardust/memory/），跨项目共享 */
+export function createGlobalMemoryStore(): MemoryStore {
+  // Electron 环境，用户主目录
+  const home = typeof window !== 'undefined'
+    ? (window as any).electronAPI?.app?.getPath?.('home') || ''
+    : ''
+  return createStore(() => `${home}/.stardust/memory`)
 }

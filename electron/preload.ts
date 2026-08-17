@@ -204,8 +204,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('plugin:installFromGithub', pluginId, fileList, manifestId),
     onGithubProgress: (cb: (data: { pluginId: string; file: string; current: number; total: number }) => void) => {
       const handler = (_event: any, data: any) => cb(data)
-      ipcRenderer.on('plugin:githubProgress', handler)
-      return () => { ipcRenderer.removeListener('plugin:githubProgress', handler) }
     },
     cloneRepo: (url: string) => ipcRenderer.invoke('plugin:cloneRepo', url),
     pullRepo: (repoDir: string) => ipcRenderer.invoke('plugin:pullRepo', repoDir),
@@ -224,10 +222,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('http:fetch', url, opts),
   },
 
-  git: {
-    exec: (cwd: string, args: string[], timeoutSec?: number) =>
-      ipcRenderer.invoke('git:exec', cwd, args, timeoutSec),
-  },
   gh: {
     exec: (cwd: string, args: string[], timeoutSec?: number) =>
       ipcRenderer.invoke('gh:exec', cwd, args, timeoutSec),

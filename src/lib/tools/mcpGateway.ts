@@ -66,6 +66,7 @@ export function registerMCPGatewayTools(tools: ToolMap) {
     execute: async ({ serverId, promptName, args }: { serverId: string; promptName: string; args?: any }) => {
       const { getPrompt } = await import('../mcpClient')
       const result = await getPrompt(serverId, promptName, args || {})
+      if (!result?.success) return `获取 prompt 失败: ${result?.error || '未知错误'}`
       return JSON.stringify(result)
     },
   }

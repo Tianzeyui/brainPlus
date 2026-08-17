@@ -5,7 +5,7 @@
 
 /** frontmatter 元数据 */
 export interface MemoryMeta {
-  type: 'user' | 'project' | 'reference'
+  type: 'user' | 'project' | 'reference' | 'feedback'
 }
 
 /** 一条记忆（对应一个 .md 文件） */
@@ -22,6 +22,8 @@ export interface MemoryEntry {
   links: string[]
   /** 文件修改时间 */
   updatedAt: number
+  /** 过期时间戳（可选），超过此时间自动跳过不注入 */
+  expiresAt?: number
 }
 
 /** MEMORY.md 中的一行索引 */
