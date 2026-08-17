@@ -31,14 +31,12 @@ function broadcast(channel: string, payload?: any) {
 
 /** 初始化自动更新（在 app ready 后调用） */
 export function initAutoUpdater() {
-  // 仅正式打包环境启用（dev 模式跳过）
-  if (!app.isPackaged) {
-    console.log('[updater] 开发模式，跳过自动更新')
-    return
-  }
+  // IPC handler 总是注册（避免渲染进程调用时报 "No handler registered"）
+  // 开发模式下 check 返回 dev 状态，不真正联网检查
 
   // 允许渲染进程主动触发检查（设置页「检查更新」按钮）
   ipcMain.handle('updater:check', async () => {
+    if (!app.isPackaged) return { status: 'dev' }
     if (updateDownloaded) return { status: 'downloaded' }
     try {
       const result = await autoUpdater.checkForUpdates()
@@ -53,6 +51,7 @@ export function initAutoUpdater() {
 
   // 用户确认下载
   ipcMain.handle('updater:download', async () => {
+    if (!app.isPackaged) return { status: 'dev' }
     if (updateDownloaded) return { status: 'downloaded' }
     try {
       autoUpdater.downloadUpdate()
@@ -64,10 +63,17 @@ export function initAutoUpdater() {
 
   // 用户确认安装（重启并安装）
   ipcMain.handle('updater:install', async () => {
+    if (!app.isPackaged) return { status: 'dev' }
     if (!updateDownloaded) return { status: 'none' }
     setImmediate(() => autoUpdater.quitAndInstall())
     return { status: 'installing' }
   })
+
+  // 仅正式打包环境启用更新检查（dev 模式不注册事件/不自动检查）
+  if (!app.isPackaged) {
+    console.log('[updater] 开发模式：IPC 已注册，跳过自动更新检查')
+    return
+  }
 
   // ---- 事件 ----
   autoUpdater.on('checking-for-update', () => {

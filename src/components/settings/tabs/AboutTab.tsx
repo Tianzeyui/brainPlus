@@ -38,6 +38,7 @@ export function AboutTab() {
     if (r?.status === 'available') setUpdate({ type: 'available', version: r.version })
     else if (r?.status === 'none') setUpdate({ type: 'none' })
     else if (r?.status === 'downloaded') setUpdate({ type: 'downloaded', version: '' })
+    else if (r?.status === 'dev') setUpdate({ type: 'error', message: '开发模式不可用，请使用打包版' })
     else if (r?.status === 'error') setUpdate({ type: 'error', message: r.message })
   }, [updater])
 
