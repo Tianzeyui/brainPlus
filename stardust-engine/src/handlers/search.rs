@@ -22,6 +22,9 @@ const STARDUST_UA: &str = "Mozilla/5.0 (compatible; Stardust/1.0)";
 fn build_client(timeout_ms: u64) -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_millis(timeout_ms))
+        // 禁用系统代理：macOS 系统代理（如 Clash）会对 api.github.com 等返回 403，
+        // 而 GitHub API / jsDelivr CDN 国内可直连，直连更可靠
+        .no_proxy()
         .build()
         .unwrap_or_default()
 }
