@@ -336,6 +336,12 @@ class PluginSystemImpl {
       // 加载 client 半端（挂载页面）
       const { loadPluginClient } = await import('./cordisClient')
       await loadPluginClient(dirPath, loaded.id || manifest.id)
+      // 加入启用集合（否则 getAllPlugins 显示为关闭状态）
+      const enabledSet = getEnabledSet()
+      if (!enabledSet.has(manifest.id)) {
+        enabledSet.add(manifest.id)
+        saveEnabledSet(enabledSet)
+      }
       // 注册到插件列表（便于 UI 显示/卸载），标记 paradigm=cordis（主进程管理，不参与 reloadAll）
       this.plugins.set(manifest.id, {
         plugin: {
