@@ -114,6 +114,14 @@ export function registerPluginIpc(): void {
       // 主进程是 ESM：用 createRequire 加载 esbuild（保留 CJS 上下文，否则 esbuild 内部 require 报 "require is not defined"）
       const { createRequire } = await import('node:module')
       const req = createRequire(import.meta.url)
+
+      // 打包版 asar 环境下，esbuild 内部 spawn 二进制会因 asar 虚拟路径报 ENOTDIR。
+      // 用 ESBUILD_BINARY_PATH 显式指向 asar.unpacked 的真实二进制（绕过 require.resolve）
+      if (app.isPackaged && !process.env.ESBUILD_BINARY_PATH) {
+        const binPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@esbuild', process.platform === 'darwin' ? (process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64') : 'linux-x64', 'bin', 'esbuild')
+        if (fs.existsSync(binPath)) process.env.ESBUILD_BINARY_PATH = binPath
+      }
+
       const esbuild = req('esbuild')
       const result = await esbuild.build({
         entryPoints: [entryPath],
