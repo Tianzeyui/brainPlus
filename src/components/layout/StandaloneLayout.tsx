@@ -18,15 +18,16 @@ export function StandaloneLayout({ nav }: Props) {
 
   useEffect(() => {
     initCorePlugins()
-    const paths = pluginSystem.getInstalledPaths()
-    if (paths.length > 0) {
-      Promise.all(paths.map(p => pluginSystem.restoreInstalled(p))).then(() => {
+    // 先初始化宿主内置页面，再恢复插件（避免 client 半端竞态）
+    import('@/lib/cordisClient').then(async (m) => {
+      m.initHostPages()
+      const paths = pluginSystem.getInstalledPaths()
+      if (paths.length > 0) {
+        await Promise.all(paths.map(p => pluginSystem.restoreInstalled(p).catch(() => {})))
         setVersion(pluginSystem.getVersion())
-        setReady(true)
-      })
-    } else {
+      }
       setReady(true)
-    }
+    })
     return pluginSystem.onChange(() => setVersion(pluginSystem.getVersion()))
   }, [])
 
