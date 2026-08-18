@@ -372,7 +372,8 @@ class PluginSystemImpl {
       const compileResult = await api.compile?.(dirPath)
       if (compileResult && !compileResult.success) {
         console.warn(`[PluginSystem] "${m.id}" TSX 编译失败: ${compileResult.error} (路径: ${dirPath})`)
-        import('@/hooks/useToast').then(toastMod => toastMod.toast({ title: `插件「${m.name}」编译失败`, description: compileResult.error, variant: 'destructive' }))
+        // toast 显示 dirPath 便于排查（打包版 renderer console 不可见）
+        import('@/hooks/useToast').then(toastMod => toastMod.toast({ title: `插件「${m.name}」编译失败`, description: `${compileResult.error}\n路径: ${dirPath}`, variant: 'destructive' }))
       }
       if (compileResult?.success && compileResult.code) {
         const exports = evaluatePluginModule(compileResult.code)

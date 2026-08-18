@@ -111,8 +111,10 @@ export function registerPluginIpc(): void {
         return { success: false, error: '未找到 index.tsx 或 index.jsx' }
       }
 
-      // 用同步 require 加载 esbuild（打包版 asar 环境下 import() 异步加载 esbuild 可能失败）
-      const esbuild = require('esbuild')
+      // 主进程是 ESM：用 createRequire 加载 esbuild（保留 CJS 上下文，否则 esbuild 内部 require 报 "require is not defined"）
+      const { createRequire } = await import('node:module')
+      const req = createRequire(import.meta.url)
+      const esbuild = req('esbuild')
       const result = await esbuild.build({
         entryPoints: [entryPath],
         bundle: true,
