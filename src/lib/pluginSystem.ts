@@ -316,7 +316,43 @@ class PluginSystemImpl {
     if (this.plugins.has(pluginId)) return { success: false, error: `插件 "${pluginId}" 已安装` }
     const result = await api.installFromGithub(pluginId, fileList, pluginId)
     if (!result.success) return result
-    return this.loadAndRegister(result.pluginDir!)
+    const pluginDir = result.pluginDir!
+    // 读取 manifest（判断范式）
+    const loadRes = await api.load(pluginDir).catch(() => null)
+    // 新范式优先
+    if (loadRes?.success && await this.tryLoadCordis(pluginDir, loadRes.manifest)) {
+      return { success: true }
+    }
+    return this.loadAndRegister(pluginDir)
+  }
+
+  /** 新范式优先加载（有 lib/index.js 走 Cordis；返回 true 表示已用新范式处理） */
+  private async tryLoadCordis(dirPath: string, manifest: any): Promise<boolean> {
+    const cordis = (window as any).electronAPI?.cordis
+    if (!cordis) return false
+    try {
+      const loaded = await cordis.loadPlugin(dirPath)
+      if (!loaded?.success) return false
+      // 加载 client 半端（挂载页面）
+      const { loadPluginClient } = await import('./cordisClient')
+      await loadPluginClient(dirPath, loaded.id || manifest.id)
+      // 注册到插件列表（便于 UI 显示/卸载）
+      this.plugins.set(manifest.id, {
+        plugin: {
+          manifest: { id: manifest.id, name: manifest.name, version: manifest.version, description: manifest.description || '', icon: manifest.icon || 'Package', navOrder: manifest.navOrder || 90, enabled: true, systemHeader: manifest.systemHeader },
+          register: () => {},
+        },
+        core: false,
+        pluginDir: dirPath,
+      })
+      const paths = this.getInstalledPaths()
+      if (!paths.includes(dirPath)) { paths.push(dirPath); this.saveInstalledPaths(paths) }
+      this.bump()
+      return true
+    } catch (e) {
+      console.warn('[PluginSystem] Cordis 加载失败，回退旧范式:', (e as Error).message)
+      return false
+    }
   }
 
   /** 启动时恢复已安装插件（跳过路径检查，但按 id 去重） */
@@ -327,34 +363,8 @@ class PluginSystemImpl {
     if (!result?.success) return
     if (this.plugins.has(result.manifest.id)) return
 
-    // 新范式：有 lib/index.js 的插件走 Cordis（host 主进程 + client 渲染进程）
-    const cordis = (window as any).electronAPI?.cordis
-    if (cordis) {
-      try {
-        const loaded = await cordis.loadPlugin(dirPath)
-        if (loaded?.success) {
-          // 加载 client 半端（挂载页面）
-          const { loadPluginClient } = await import('./cordisClient')
-          await loadPluginClient(dirPath, loaded.id || result.manifest.id)
-          // 注册到插件列表（便于 UI 显示/卸载）
-          const manifest = result.manifest
-          this.plugins.set(manifest.id, {
-            plugin: {
-              manifest: { id: manifest.id, name: manifest.name, version: manifest.version, description: manifest.description || '', icon: manifest.icon || 'Package', navOrder: manifest.navOrder || 90, enabled: true, systemHeader: manifest.systemHeader },
-              register: () => {},
-            },
-            core: false,
-            pluginDir: dirPath,
-          })
-          const paths = this.getInstalledPaths()
-          if (!paths.includes(dirPath)) { paths.push(dirPath); this.saveInstalledPaths(paths) }
-          this.bump()
-          return
-        }
-      } catch (e) {
-        console.warn('[PluginSystem] Cordis 加载失败，回退旧范式:', (e as Error).message)
-      }
-    }
+    // 新范式优先
+    if (await this.tryLoadCordis(dirPath, result.manifest)) return
 
     // 旧范式：运行时 esbuild 编译（兼容存量插件）
     await this.loadAndRegister(dirPath).catch(() => {})
