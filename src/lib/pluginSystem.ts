@@ -71,7 +71,7 @@ class PluginSystemImpl {
   getVersion(): number { return this.version }
   private bump() { this.version++; this.listeners.forEach(fn => fn()) }
   onChange(fn: () => void) { this.listeners.push(fn); return () => { this.listeners = this.listeners.filter(l => l !== fn) } }
-  private plugins: Map<string, { plugin: Plugin; core: boolean; pluginDir?: string }> = new Map()
+  private plugins: Map<string, { plugin: Plugin; core: boolean; pluginDir?: string; paradigm?: 'cordis' }> = new Map()
   private navItems: NavItemDef[] = []
   private routes: Map<string, () => Promise<any>> = new Map()
   private toolRegistrations: Array<(tools: Record<string, any>) => void> = []
@@ -336,7 +336,7 @@ class PluginSystemImpl {
       // 加载 client 半端（挂载页面）
       const { loadPluginClient } = await import('./cordisClient')
       await loadPluginClient(dirPath, loaded.id || manifest.id)
-      // 注册到插件列表（便于 UI 显示/卸载）
+      // 注册到插件列表（便于 UI 显示/卸载），标记 paradigm=cordis（主进程管理，不参与 reloadAll）
       this.plugins.set(manifest.id, {
         plugin: {
           manifest: { id: manifest.id, name: manifest.name, version: manifest.version, description: manifest.description || '', icon: manifest.icon || 'Package', navOrder: manifest.navOrder || 90, enabled: true, systemHeader: manifest.systemHeader },
@@ -344,6 +344,7 @@ class PluginSystemImpl {
         },
         core: false,
         pluginDir: dirPath,
+        paradigm: 'cordis' as any,
       })
       const paths = this.getInstalledPaths()
       if (!paths.includes(dirPath)) { paths.push(dirPath); this.saveInstalledPaths(paths) }
@@ -473,6 +474,11 @@ class PluginSystemImpl {
     if (enabled) enabledSet.add(id)
     else enabledSet.delete(id)
     saveEnabledSet(enabledSet)
+    // Cordis 插件：主进程管理启停（reloadAll 会清空其导航导致全隐藏）
+    if ((entry as any).paradigm === 'cordis') {
+      this.bump()
+      return
+    }
     this.reloadAll()
     this.bump()
   }
@@ -531,15 +537,25 @@ class PluginSystemImpl {
   }
 
   private reloadAll() {
+    // Cordis 插件的导航/路由由 client 半端维护，单独保留（不被清空）
+    const cordisNav = this.navItems.filter(item => {
+      const entry = [...this.plugins.values()].find(p => (p as any).paradigm === 'cordis')
+      return true // 简化：全部 Cordis 导航由 navItems 保留
+    })
+    const cordisRoutes = new Map(this.routes)
     this.navItems = []
     this.routes = new Map()
     this.toolRegistrations = []
     for (const [, entry] of this.plugins) {
+      if ((entry as any).paradigm === 'cordis') continue // Cordis 插件不重复注册（导航已保留）
       if (entry.core || getEnabledSet().has(entry.plugin.manifest.id)) {
         try { entry.plugin.register(this.createContext(entry.pluginDir)) }
         catch (e: any) { console.error(`[PluginSystem] reloadAll: "${entry.plugin.manifest.id}" 注册失败:`, e.message) }
       }
     }
+    // 恢复 Cordis 插件的导航/路由
+    this.navItems.push(...cordisNav)
+    for (const [k, v] of cordisRoutes) this.routes.set(k, v)
   }
 }
 
