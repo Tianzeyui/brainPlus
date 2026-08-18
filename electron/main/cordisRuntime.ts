@@ -98,6 +98,8 @@ export function initCordisRuntime(): Context {
 }
 
 /** 加载一个静态 Cordis 插件（lib/index.js，零 esbuild） */
+const loadedPluginIds = new Set<string>()
+
 export async function loadCordisPlugin(pluginDir: string): Promise<{ success: boolean; error?: string; id?: string }> {
   try {
     const ctx = getCordisCtx()
@@ -114,9 +116,14 @@ export async function loadCordisPlugin(pluginDir: string): Promise<{ success: bo
     if (typeof apply !== 'function') {
       return { success: false, error: '插件必须导出 apply(ctx) 函数' }
     }
+    const id = plugin.name || path.basename(pluginDir)
+    // 幂等：同一插件不重复加载（避免工具重复注册）
+    if (loadedPluginIds.has(id)) {
+      return { success: true, id, already: true }
+    }
     const entry = typeof plugin === 'function' ? plugin : { name: plugin.name, inject: plugin.inject, provide: plugin.provide, apply }
     await ctx.plugin(entry)
-    const id = plugin.name || path.basename(pluginDir)
+    loadedPluginIds.add(id)
     ctx.logger.info('[cordis] 插件已加载: ' + id)
     return { success: true, id }
   } catch (e: any) {
