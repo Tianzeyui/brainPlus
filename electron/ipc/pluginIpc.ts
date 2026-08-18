@@ -104,9 +104,15 @@ export function registerPluginIpc(): void {
       const tsxPath = path.join(dirPath, 'index.tsx')
       const jsxPath = path.join(dirPath, 'index.jsx')
       const entryPath = fs.existsSync(tsxPath) ? tsxPath : fs.existsSync(jsxPath) ? jsxPath : null
-      if (!entryPath) return { success: false, error: '未找到 index.tsx 或 index.jsx' }
+      if (!entryPath) {
+        // 详细日志：排查"文件明明存在却找不到入口"的问题
+        console.error(`[plugin:compile] 未找到入口 (dirPath=${dirPath})`)
+        try { console.error(`  dir 存在=${fs.existsSync(dirPath)}, index.tsx=${fs.existsSync(tsxPath)}, 内容=${fs.readdirSync(dirPath).join(',')}`) } catch (e2: any) { console.error('  读取目录失败:', e2.message) }
+        return { success: false, error: '未找到 index.tsx 或 index.jsx' }
+      }
 
-      const esbuild = await import('esbuild')
+      // 用同步 require 加载 esbuild（打包版 asar 环境下 import() 异步加载 esbuild 可能失败）
+      const esbuild = require('esbuild')
       const result = await esbuild.build({
         entryPoints: [entryPath],
         bundle: true,
