@@ -15,11 +15,11 @@ export interface CommunityPlugin {
 }
 
 const REPO = 'Tianzeyui/stardust-community-plugins'
-// jsDelivr CDN 代理 GitHub 文件，国内可访问
-const INDEX_URL = `https://cdn.jsdelivr.net/gh/${REPO}@main/plugins.json`
+// 用 gcore 域名避免 301 重定向到 raw.githubusercontent.com（no_proxy 下直连不通）
+const INDEX_URL = `https://gcore.jsdelivr.net/gh/${REPO}@main/plugins.json`
 const CACHE_KEY = 'stardust_community_plugins'
 const CACHE_TIME_KEY = 'stardust_community_plugins_time'
-const CACHE_TTL_MS = 5 * 60 * 1000 // 5 分钟
+const CACHE_TTL_MS = 60 * 1000 // 1 分钟（插件列表更新频繁，避免旧缓存滞留）
 
 /**
  * 通过 Electron IPC 发起 HTTP 请求，返回原始文本
