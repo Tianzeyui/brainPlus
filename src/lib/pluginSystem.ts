@@ -543,25 +543,30 @@ class PluginSystemImpl {
   }
 
   private reloadAll() {
-    // Cordis 插件的导航/路由由 client 半端维护，单独保留（不被清空）
-    const cordisNav = this.navItems.filter(item => {
-      const entry = [...this.plugins.values()].find(p => (p as any).paradigm === 'cordis')
-      return true // 简化：全部 Cordis 导航由 navItems 保留
-    })
-    const cordisRoutes = new Map(this.routes)
+    // Cordis 插件的导航/路由由 client 半端维护，记录插件路径以便重挂载
+    const cordisDirs: string[] = []
+    for (const [, entry] of this.plugins) {
+      if ((entry as any).paradigm === 'cordis' && entry.pluginDir) cordisDirs.push(entry.pluginDir)
+    }
     this.navItems = []
     this.routes = new Map()
     this.toolRegistrations = []
     for (const [, entry] of this.plugins) {
-      if ((entry as any).paradigm === 'cordis') continue // Cordis 插件不重复注册（导航已保留）
+      if ((entry as any).paradigm === 'cordis') continue // Cordis 插件不重复注册（导航由 client 半端重挂载）
       if (entry.core || getEnabledSet().has(entry.plugin.manifest.id)) {
         try { entry.plugin.register(this.createContext(entry.pluginDir)) }
         catch (e: any) { console.error(`[PluginSystem] reloadAll: "${entry.plugin.manifest.id}" 注册失败:`, e.message) }
       }
     }
-    // 恢复 Cordis 插件的导航/路由
-    this.navItems.push(...cordisNav)
-    for (const [k, v] of cordisRoutes) this.routes.set(k, v)
+    // 重新挂载 Cordis 插件的 client 半端（恢复导航）
+    for (const dir of cordisDirs) {
+      const entry = [...this.plugins.values()].find(p => p.pluginDir === dir)
+      if (entry) {
+        import('./cordisClient').then(({ loadPluginClient }) => {
+          loadPluginClient(dir, entry.plugin.manifest.id).catch(() => {})
+        })
+      }
+    }
   }
 }
 
