@@ -131,7 +131,7 @@ async function autoLoadInstalledPlugins(): Promise<void> {
 const loadedPluginIds = new Set<string>()
 const loadedPluginEntries = new Map<string, any>()
 
-export async function loadCordisPlugin(pluginDir: string): Promise<{ success: boolean; error?: string; id?: string }> {
+export async function loadCordisPlugin(pluginDir: string, force = false): Promise<{ success: boolean; error?: string; id?: string; already?: boolean }> {
   try {
     const ctx = getCordisCtx()
     const libPath = path.join(pluginDir, 'lib', 'index.js')
@@ -140,6 +140,11 @@ export async function loadCordisPlugin(pluginDir: string): Promise<{ success: bo
     }
     // 动态 require（CJS 插件模块）
     // 用宿主 createRequire 加载：插件内的 require('@deepseek-ai/...') 从宿主 node_modules 解析
+    // 清除 require 缓存：重装/升级后磁盘代码已更新，必须强制重新求值
+    try {
+      const resolved = req.resolve(libPath)
+      delete req.cache[resolved]
+    } catch {}
     const pluginModule = req(libPath)
     const plugin = pluginModule.default || pluginModule
     // 支持两种形态：{ name, apply } 对象 或 函数
@@ -148,9 +153,10 @@ export async function loadCordisPlugin(pluginDir: string): Promise<{ success: bo
       return { success: false, error: '插件必须导出 apply(ctx) 函数' }
     }
     const id = plugin.name || path.basename(pluginDir)
-    // 幂等：同一插件不重复加载（避免工具重复注册）
+    // 幂等：同一插件不重复加载（避免工具重复注册）；force 时先卸载再加载
     if (loadedPluginIds.has(id)) {
-      return { success: true, id, already: true }
+      if (!force) return { success: true, id, already: true }
+      await unloadCordisPlugin(id)
     }
     const entry = typeof plugin === 'function' ? plugin : { name: plugin.name, inject: plugin.inject, provide: plugin.provide, apply }
     await ctx.plugin(entry)

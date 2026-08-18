@@ -160,6 +160,13 @@ export function registerPluginIpc(): void {
     try {
       const destDir = path.join(app.getPath('userData'), 'plugins', pluginId)
       if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true })
+      // Cordis 插件：同时从运行时卸载（清工具/服务 + loadedPluginIds，否则重装时命中幂等不刷新）
+      try {
+        const { unloadCordisPlugin } = await import('../main/cordisRuntime.js')
+        await unloadCordisPlugin(pluginId)
+      } catch (e2: any) {
+        console.warn(`[plugin:uninstall] Cordis 卸载失败 (${pluginId}):`, e2?.message)
+      }
       return { success: true }
     } catch (e: any) {
       return { success: false, error: e.message }
@@ -262,10 +269,10 @@ export function registerPluginIpc(): void {
 
   // ==================== Cordis 新范式 ====================
 
-  // 加载 Cordis 插件（lib/index.js，零 esbuild）
-  ipcMain.handle('cordis:loadPlugin', async (_e, pluginDir: string) => {
+  // 加载 Cordis 插件（lib/index.js，零 esbuild）；force=true 时先卸载再加载（重装场景）
+  ipcMain.handle('cordis:loadPlugin', async (_e, pluginDir: string, force?: boolean) => {
     const { loadCordisPlugin } = await import('../main/cordisRuntime.js')
-    return loadCordisPlugin(pluginDir)
+    return loadCordisPlugin(pluginDir, !!force)
   })
 
   // 卸载 Cordis 插件（移除工具/服务）

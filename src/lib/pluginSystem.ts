@@ -309,7 +309,7 @@ class PluginSystemImpl {
     const pluginDir = result.pluginDir!
     // 新范式优先（有 lib/index.js 走 Cordis）
     const loadRes = await api.load(pluginDir).catch(() => null)
-    if (loadRes?.success && await this.tryLoadCordis(pluginDir, loadRes.manifest)) {
+    if (loadRes?.success && await this.tryLoadCordis(pluginDir, loadRes.manifest, true)) {
       return { success: true }
     }
     return this.loadAndRegister(pluginDir)
@@ -326,22 +326,29 @@ class PluginSystemImpl {
     // 读取 manifest（判断范式）
     const loadRes = await api.load(pluginDir).catch(() => null)
     // 新范式优先
-    if (loadRes?.success && await this.tryLoadCordis(pluginDir, loadRes.manifest)) {
+    if (loadRes?.success && await this.tryLoadCordis(pluginDir, loadRes.manifest, true)) {
       return { success: true }
     }
     return this.loadAndRegister(pluginDir)
   }
 
-  /** 新范式优先加载（有 lib/index.js 走 Cordis；返回 true 表示已用新范式处理） */
-  private async tryLoadCordis(dirPath: string, manifest: any): Promise<boolean> {
+  /** 新范式优先加载（有 lib/index.js 走 Cordis；返回 true 表示已用新范式处理）
+   *  force=true 用于安装/重装：主进程强制卸载旧实例再加载磁盘最新代码
+   */
+  private async tryLoadCordis(dirPath: string, manifest: any, force = false): Promise<boolean> {
     const cordis = (window as any).electronAPI?.cordis
     if (!cordis) return false
     try {
-      const loaded = await cordis.loadPlugin(dirPath)
+      // 先移除旧的导航/路由（重装场景避免重复挂载）
+      this.removePluginNav(manifest.id)
+      const loaded = await cordis.loadPlugin(dirPath, force)
       if (!loaded?.success) return false
       // 加载 client 半端（挂载页面）
       const { loadPluginClient } = await import('./cordisClient')
-      await loadPluginClient(dirPath, loaded.id || manifest.id)
+      const clientRes = await loadPluginClient(dirPath, loaded.id || manifest.id)
+      if (!clientRes?.success) {
+        console.warn(`[PluginSystem] "${manifest.id}" client 半端加载失败:`, clientRes?.error)
+      }
       // 加入启用集合（否则 getAllPlugins 显示为关闭状态）
       const enabledSet = getEnabledSet()
       if (!enabledSet.has(manifest.id)) {
@@ -490,9 +497,9 @@ class PluginSystemImpl {
     if ((entry as any).paradigm === 'cordis') {
       const cordis = (window as any).electronAPI?.cordis
       if (enabled) {
-        // 重新加载（工具 + 导航）
+        // 重新加载（工具 + 导航）；force=true：若停用时卸载失败残留幂等状态，也强制重载
         if (entry.pluginDir && cordis) {
-          cordis.loadPlugin(entry.pluginDir).then(() => {
+          cordis.loadPlugin(entry.pluginDir, true).then(() => {
             import('./cordisClient').then(async ({ loadPluginClient }) => {
               await loadPluginClient(entry.pluginDir!, id).catch(() => {})
               // 导航恢复后再次 bump，确保 Sidebar 感知（loadPluginClient 是异步的）
