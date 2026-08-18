@@ -89,12 +89,42 @@ export function initCordisRuntime(): Context {
   try {
     ctx.logger.exporter({
       colors: 0,
-      export: (message: any) => console.log('[cordis:log] ' + String(message.format || message)),
+      export: (message: any) => {
+        const args = (message.args || []).map((a: any) => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')
+        console.log('[cordis:log] ' + (message.name || '') + ' ' + args)
+      },
     })
   } catch {}
 
   console.log('[cordis] 运行时已初始化 (Cordis v' + ctx.root.version + ')')
+
+  // 自动加载已安装的新范式插件（主进程管理，不依赖渲染进程 localStorage）
+  autoLoadInstalledPlugins().catch((e) => {
+    console.warn('[cordis] 自动加载插件失败:', (e as Error).message)
+  })
+
   return ctx
+}
+
+/** 扫描 appData/plugins 并自动加载新范式插件（有 lib/index.js） */
+async function autoLoadInstalledPlugins(): Promise<void> {
+  try {
+    const { app } = await import('electron')
+    const pluginsDir = path.join(app.getPath('userData'), 'plugins')
+    if (!fs.existsSync(pluginsDir)) return
+    const dirs = fs.readdirSync(pluginsDir, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => path.join(pluginsDir, d.name))
+    for (const dir of dirs) {
+      const libPath = path.join(dir, 'lib', 'index.js')
+      if (fs.existsSync(libPath)) {
+        await loadCordisPlugin(dir)
+      }
+    }
+    console.log(`[cordis] 自动加载完成，已注册工具: ${listCordisTools().join(', ') || '(无)'}`)
+  } catch (e) {
+    console.warn('[cordis] 扫描插件目录失败:', (e as Error).message)
+  }
 }
 
 /** 加载一个静态 Cordis 插件（lib/index.js，零 esbuild） */
@@ -124,7 +154,7 @@ export async function loadCordisPlugin(pluginDir: string): Promise<{ success: bo
     const entry = typeof plugin === 'function' ? plugin : { name: plugin.name, inject: plugin.inject, provide: plugin.provide, apply }
     await ctx.plugin(entry)
     loadedPluginIds.add(id)
-    ctx.logger.info('[cordis] 插件已加载: ' + id)
+    console.log(`[cordis] 插件已加载: ${id}`)
     return { success: true, id }
   } catch (e: any) {
     console.error('[cordis] 插件加载失败:', e?.stack || e?.message || e)
