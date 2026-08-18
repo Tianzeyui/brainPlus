@@ -1,0 +1,8 @@
+{
+  "name": "drawio",
+  "version": "1.0.0",
+  "description": "drawio 图表",
+  "private": true,
+  "main": "lib/index.js",
+  "dependencies": {}
+}

@@ -1,0 +1,8 @@
+{
+  "name": "board",
+  "version": "1.0.0",
+  "description": "卡片看板，任务规划与看板视图",
+  "private": true,
+  "main": "lib/index.js",
+  "dependencies": {}
+}
