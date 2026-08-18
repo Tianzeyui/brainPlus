@@ -170,6 +170,13 @@ export interface ElectronAPI {
     cloneRepo: (url: string) => Promise<{ success: boolean; error?: string; repoDir?: string; plugins?: any[] }>
     pullRepo: (repoDir: string) => Promise<{ success: boolean; error?: string; plugins?: any[] }>
   }
+  cordis: {
+    loadPlugin: (pluginDir: string, force?: boolean) => Promise<{ success: boolean; error?: string; id?: string; already?: boolean }>
+    unloadPlugin: (pluginId: string) => Promise<{ success: boolean; error?: string }>
+    loadClientCode: (pluginDir: string) => Promise<{ success: boolean; code?: string; error?: string }>
+    listTools: () => Promise<{ success: boolean; tools: Array<{ name: string; description: string; parameters: any }> }>
+    callTool: (toolName: string, args: Record<string, unknown>) => Promise<{ success: boolean; result?: any; error?: string }>
+  }
   git: {
     exec: (cwd: string, args: string[], timeoutSec?: number) =>
       Promise<{ success: boolean; output?: string; stderr?: string; exitCode?: number; error?: string }>

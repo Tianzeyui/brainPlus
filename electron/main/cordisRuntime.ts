@@ -197,3 +197,13 @@ export function listCordisTools(): string[] {
     return []
   }
 }
+
+/** 列出已注册工具的模型面 schema（name/description/parameters），供渲染进程注入 AI 工具集 */
+export function listCordisToolSchemas(): Array<{ name: string; description: string; parameters: unknown }> {
+  try {
+    const ctx = getCordisCtx()
+    return ctx.tools.schemas() as Array<{ name: string; description: string; parameters: unknown }>
+  } catch {
+    return []
+  }
+}

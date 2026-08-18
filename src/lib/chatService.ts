@@ -156,6 +156,32 @@ export async function getMCPSdkTools(autoMode?: boolean, userId?: string): Promi
     // 注入插件 AI 工具
     const { pluginSystem } = await import('./pluginSystem')
     Object.assign(tools, pluginSystem.getPluginTools())
+
+    // 注入 Cordis（新范式）主进程工具：渲染进程通过 IPC 代理执行
+    try {
+      const ea = (window as any).electronAPI
+      if (ea?.cordis?.listTools && ea.cordis?.callTool) {
+        const res = await ea.cordis.listTools()
+        const cordisTools: Array<{ name: string; description: string; parameters: any }> = res?.tools || []
+        for (const t of cordisTools) {
+          if (!t?.name || !t.description) continue
+          const key = t.name.startsWith('plugin__') ? t.name : `plugin__${t.name}`
+          if (tools[key]) continue
+          tools[key] = {
+            description: t.description,
+            inputSchema: jsonSchema(t.parameters || { type: 'object', properties: {} }),
+            execute: async (args: any = {}) => {
+              const { _toolName, ...rest } = args || {}
+              const r = await ea.cordis.callTool(t.name, rest)
+              if (!r?.success) throw new Error(r?.error || `工具 ${t.name} 调用失败`)
+              return r.result
+            },
+          }
+        }
+      }
+    } catch (e: any) {
+      console.warn('[getMCPSdkTools] Cordis 工具注入失败:', e?.message || e)
+    }
   } catch (e: any) {
     console.error('[getMCPSdkTools] 工具注册失败:', e.message, e.stack?.slice(0, 200))
     return {}

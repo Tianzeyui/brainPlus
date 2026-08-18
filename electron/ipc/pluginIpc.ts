@@ -306,10 +306,10 @@ export function registerPluginIpc(): void {
     return unloadCordisPlugin(pluginId)
   })
 
-  // 列出已注册的 Cordis 工具
+  // 列出已注册的 Cordis 工具（含描述与参数 schema，供渲染进程注入 AI 工具集）
   ipcMain.handle('cordis:listTools', async () => {
-    const { listCordisTools } = await import('../main/cordisRuntime.js')
-    return { success: true, tools: listCordisTools() }
+    const { listCordisToolSchemas } = await import('../main/cordisRuntime.js')
+    return { success: true, tools: listCordisToolSchemas() }
   })
 
   // 读取插件 client 半端源码（渲染进程无 fs，由主进程读）
