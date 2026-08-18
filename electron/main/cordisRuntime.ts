@@ -16,13 +16,14 @@
  *   }
  */
 import { Context } from '@deepseek-ai/cordis'
-import ToolRegistry from '@deepseek-ai/dsh-tools'
+import ToolRegistry, { defineTool } from '@deepseek-ai/dsh-tools'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { createRequire } from 'node:module'
 import { getSidecar } from './sidecarManager.js'
+import { getSupabaseClient } from './supabaseClient.js'
 
 // ESM 环境下的 require（加载 CJS 模块）
 const req = createRequire(import.meta.url)
@@ -46,7 +47,6 @@ export function initCordisRuntime(): Context {
   new ToolRegistry(ctx, { mode: 'native' })
 
   // 宿主注入 defineTool（插件无需 require dsh-tools，对齐 DSH 沙箱的 harness 助手）
-  const { defineTool } = req('@deepseek-ai/dsh-tools') as any
   ctx.provide('defineTool', defineTool)
 
   // ---- 宿主服务：sidecar（统一能力入口） ----
@@ -75,18 +75,14 @@ export function initCordisRuntime(): Context {
       getSidecar().call(`mcp.${method}`, params || {}, timeout),
   })
 
-  // ---- 宿主服务：supabase（延迟加载，插件工具调用时获取） ----
+  // ---- 宿主服务：supabase（延迟获取，插件工具调用时连接） ----
   ctx.provide('supabase', {
     from: (table: string) => {
-      const { getSupabaseClient } = req(path.join(__dirname, 'supabaseClient.js')) as any
       const client = getSupabaseClient()
       if (!client) throw new Error('Supabase 未配置')
       return client.from(table)
     },
-    client: () => {
-      const { getSupabaseClient } = req(path.join(__dirname, 'supabaseClient.js')) as any
-      return getSupabaseClient()
-    },
+    client: () => getSupabaseClient(),
   })
 
   // cordis logger 默认只进 buffer，加 console 输出便于 dev 观察
