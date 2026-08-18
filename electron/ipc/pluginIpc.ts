@@ -259,4 +259,33 @@ export function registerPluginIpc(): void {
       return { success: false, error: e.message }
     }
   })
+
+  // ==================== Cordis 新范式 ====================
+
+  // 加载 Cordis 插件（lib/index.js，零 esbuild）
+  ipcMain.handle('cordis:loadPlugin', async (_e, pluginDir: string) => {
+    const { loadCordisPlugin } = await import('../main/cordisRuntime.js')
+    return loadCordisPlugin(pluginDir)
+  })
+
+  // 列出已注册的 Cordis 工具
+  ipcMain.handle('cordis:listTools', async () => {
+    const { listCordisTools } = await import('../main/cordisRuntime.js')
+    return { success: true, tools: listCordisTools() }
+  })
+
+  // 调用 Cordis 插件注册的工具（execute 在主进程）
+  ipcMain.handle('cordis:callTool', async (_e, toolName: string, args: Record<string, unknown>) => {
+    const { getCordisCtx } = await import('../main/cordisRuntime.js')
+    try {
+      const ctx = getCordisCtx()
+      const view = ctx.tools.view(ctx)
+      const tool = view.visible.get(toolName)
+      if (!tool) return { success: false, error: `工具 ${toolName} 未注册` }
+      const result = await tool.execute(args)
+      return { success: true, result }
+    } catch (e: any) {
+      return { success: false, error: e?.message || String(e) }
+    }
+  })
 }

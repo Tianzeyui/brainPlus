@@ -209,6 +209,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     pullRepo: (repoDir: string) => ipcRenderer.invoke('plugin:pullRepo', repoDir),
   },
 
+  // Cordis 新范式
+  cordis: {
+    loadPlugin: (pluginDir: string) => ipcRenderer.invoke('cordis:loadPlugin', pluginDir),
+    listTools: () => ipcRenderer.invoke('cordis:listTools'),
+    callTool: (toolName: string, args: Record<string, unknown>) => ipcRenderer.invoke('cordis:callTool', toolName, args),
+  },
+
   search: {
     fetch: (url: string, timeout: number) => ipcRenderer.invoke('search:fetch', url, timeout),
     duckduckgo: (query: string) => ipcRenderer.invoke('search:ddg', query),

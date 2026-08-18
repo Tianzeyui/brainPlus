@@ -1,0 +1,10 @@
+{
+  "name": "hello-cordis",
+  "version": "1.0.0",
+  "description": "Cordis 新范式示范插件",
+  "private": true,
+  "main": "lib/index.js",
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.0.1-rc.1"
+  }
+}

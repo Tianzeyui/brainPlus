@@ -14,6 +14,7 @@ import { fileURLToPath } from 'url'
 import { initSidecar, getSidecar } from './main/sidecarManager.js'
 import { initWorkspace } from './main/workspace.js'
 import { initAutoUpdater } from './main/autoUpdater.js'
+import { initCordisRuntime } from './main/cordisRuntime.js'
 
 // ====== IPC 模块导入 ======
 import { registerSidecarIpc } from './ipc/sidecarIpc.js'
@@ -95,6 +96,9 @@ app.whenReady().then(async () => {
   // ---- 预初始化 ----
   getSidecar().call('sandbox.preInit').catch(() => {})
   initWorkspace()
+
+  // ---- Cordis 插件运行时（新范式） ----
+  initCordisRuntime()
 
   // ---- Rust Sidecar 启动 ----
   try {
