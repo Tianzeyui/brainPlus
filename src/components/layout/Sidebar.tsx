@@ -39,12 +39,9 @@ export function Sidebar({ activeNav, onNavChange, collapsed, onToggleCollapse, o
     // 先初始化宿主内置页面（Cordis client 半端挂载用），再恢复插件（避免竞态）
     import('@/lib/cordisClient').then(async (m) => {
       m.initHostPages()
-      // 异步恢复第三方插件
-      const paths = pluginSystem.getInstalledPaths()
-      if (paths.length > 0) {
-        await Promise.all(paths.map(p => pluginSystem.restoreInstalled(p).catch(() => {})))
-        setVersion(pluginSystem.getVersion())
-      }
+      // 从磁盘恢复全部已安装插件（唯一事实源 = appData/plugins，对齐主进程 autoLoad）
+      await pluginSystem.restoreAllInstalled()
+      setVersion(pluginSystem.getVersion())
     })
     // 监听插件变更（安装/卸载/启停）
     return pluginSystem.onChange(() => setVersion(pluginSystem.getVersion()))

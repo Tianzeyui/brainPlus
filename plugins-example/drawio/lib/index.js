@@ -38,13 +38,13 @@ function apply(ctx) {
   }
   async function _listDiagrams() {
     const sb = getSB();
-    const { data, error } = await sb.from("drawio_diagrams").select("id,name,updated_at").order("updated_at", { ascending: false });
+    const { data, error } = await sb.from("drawios").select("id,name,updated_at").order("updated_at", { ascending: false });
     if (error) throw error;
     return data || [];
   }
   async function _getDiagram(id) {
     const sb = getSB();
-    const { data, error } = await sb.from("drawio_diagrams").select("*").eq("id", id).maybeSingle();
+    const { data, error } = await sb.from("drawios").select("*").eq("id", id).maybeSingle();
     if (error) throw error;
     if (!data) throw new Error(`\u672A\u627E\u5230\u56FE\u8868 id=${id}`);
     return data;

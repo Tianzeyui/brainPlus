@@ -9,11 +9,15 @@
  * registerRoute 支持：
  *   - loader 函数（插件自带 React 组件，宿主提供 React）
  *   - 字符串 pageId（挂载宿主内置页面 hostPageRegistry）
+ *
+ * clientCtx 还提供 supabase.getClient()（渲染进程已登录的 client），
+ * 对齐旧范式 ctx.api.supabase.getClient()，供插件页面直接读写数据。
  */
 import React from 'react'
 import * as jsxRuntime from 'react/jsx-runtime'
 import * as Lucide from 'lucide-react'
 import { pluginSystem } from './pluginSystem'
+import { getSupabaseClient } from './supabase'
 
 /** 宿主内置页面注册表：pageId → 组件 */
 const hostPageRegistry = new Map<string, () => Promise<any>>()
@@ -39,6 +43,7 @@ export async function loadPluginClient(pluginDir: string, pluginId: string): Pro
     // 读取 client 半端源码
     const result = await api.plugin.load(pluginDir)
     if (!result?.success) return { success: false, error: result?.error }
+    console.log(`[CordisClient] 加载 "${pluginId}" client 半端, dir=${pluginDir}`)
 
     // 主进程读取 lib/client.js 内容
     const clientCode = await api.cordis.loadClientCode(pluginDir)
@@ -67,7 +72,7 @@ export async function loadPluginClient(pluginDir: string, pluginId: string): Pro
     const clientModule = module.exports.default || module.exports
     const registerClient = typeof clientModule === 'function' ? clientModule : clientModule?.registerClient
     if (typeof registerClient !== 'function') {
-      return { success: false, error: 'client 半端必须导出 registerClient(ctx)' }
+      return { success: false, error: `client 半端必须导出 registerClient(ctx)（实际导出: ${Object.keys(module.exports).join(',') || '空'}）` }
     }
 
     // 执行 registerClient，挂载页面
@@ -79,17 +84,25 @@ export async function loadPluginClient(pluginDir: string, pluginId: string): Pro
         //   2. loader 函数 → 插件自带组件（求值后的 React 组件）
         if (typeof pageOrLoader === 'function') {
           pluginSystem.registerRoute(id, pageOrLoader)
+          console.log(`[CordisClient] "${pluginId}" 注册路由 ${id} (自带组件)`)
           return
         }
         const loader = hostPageRegistry.get(pageOrLoader)
         if (!loader) {
-          console.warn(`[CordisClient] 宿主页面 "${pageOrLoader}" 未注册`)
+          console.warn(`[CordisClient] 宿主页面 "${pageOrLoader}" 未注册 (hostPageRegistry size=${hostPageRegistry.size})`)
           return
         }
         pluginSystem.registerRoute(id, loader)
+        console.log(`[CordisClient] "${pluginId}" 注册路由 ${id} → 宿主页面 ${pageOrLoader}`)
+      },
+      // 宿主 API（对齐旧范式 ctx.api.supabase）：提供渲染进程已登录的 Supabase client
+      supabase: {
+        getClient: () => getSupabaseClient(),
+        isConfigured: () => !!getSupabaseClient(),
       },
     }
     registerClient(clientCtx)
+    console.log(`[CordisClient] "${pluginId}" client 半端挂载完成`)
     return { success: true }
   } catch (e: any) {
     console.error('[CordisClient] 加载失败:', e?.stack || e?.message || e)

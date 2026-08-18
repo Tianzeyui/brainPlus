@@ -21,6 +21,22 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+/** 将渲染进程的 Supabase 会话同步到主进程（Cordis host 工具走 RLS 需要） */
+function syncSessionToMain(session: Session | null) {
+  const ea = (window as any).electronAPI
+  if (!ea?.supabase) return
+  try {
+    if (session?.access_token) {
+      ea.supabase.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      }).catch(() => {})
+    } else {
+      ea.supabase.clearSession().catch(() => {})
+    }
+  } catch { /* 非 Electron 环境忽略 */ }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
@@ -62,6 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session)
       setUser(session?.user ?? null)
       setLoading(false)
+      syncSessionToMain(session)
     })
 
     const {
@@ -71,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session)
       setUser(session?.user ?? null)
       setError(null)
+      syncSessionToMain(session)
     })
 
     return () => {
@@ -94,6 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data.session) {
       setSession(data.session)
       setUser(data.session.user)
+      syncSessionToMain(data.session)
     }
   }, [])
 
@@ -115,6 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data.session) {
       setSession(data.session)
       setUser(data.session.user)
+      syncSessionToMain(data.session)
     }
   }, [])
 
@@ -130,6 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error: err } = await supabase.auth.signOut()
     setUser(null)
     setSession(null)
+    syncSessionToMain(null)
     if (err) setError(err.message)
   }, [])
 

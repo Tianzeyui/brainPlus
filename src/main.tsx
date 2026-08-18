@@ -10,6 +10,20 @@ import { initSupabaseConfig } from './lib/supabase'
 import App from './App'
 import './index.css'
 
+// 渲染进程 console → 主进程 stdout（dev 调试：插件加载/路由问题可直接在终端观察）
+try {
+  const api = (window as any).electronAPI
+  if (api?.rendererLog) {
+    for (const level of ['log', 'info', 'warn', 'error', 'debug'] as const) {
+      const orig = console[level].bind(console)
+      console[level] = (...args: any[]) => {
+        orig(...args)
+        try { api.rendererLog(level, args) } catch {}
+      }
+    }
+  }
+} catch {}
+
 // 启动时从磁盘加载配置
 Promise.all([initConfig(), initSupabaseConfig()]).catch(() => {})
 

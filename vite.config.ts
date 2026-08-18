@@ -35,6 +35,11 @@ export default defineConfig({
                 'mammoth',
                 'esbuild',
                 'node-pty',
+                // ws 及其可选加速依赖：保持 CJS 运行时加载（ws 内部 require 有 try/catch），
+                // 避免被 vite 静态化后 bundle 里出现无法解析的 bufferutil import
+                'ws',
+                'bufferutil',
+                'utf-8-validate',
               ],
             },
           },

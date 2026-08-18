@@ -368,6 +368,7 @@ class PluginSystemImpl {
       const paths = this.getInstalledPaths()
       if (!paths.includes(dirPath)) { paths.push(dirPath); this.saveInstalledPaths(paths) }
       this.bump()
+      console.log(`[PluginSystem] Cordis 插件 "${manifest.id}" 加载完成`, JSON.stringify(this.debugState()))
       return true
     } catch (e) {
       console.warn('[PluginSystem] Cordis 加载失败，回退旧范式:', (e as Error).message)
@@ -388,6 +389,24 @@ class PluginSystemImpl {
 
     // 旧范式：运行时 esbuild 编译（兼容存量插件）
     await this.loadAndRegister(dirPath).catch(() => {})
+  }
+
+  /** 从磁盘 appData/plugins 恢复全部已安装插件（唯一事实源，对齐主进程 autoLoad） */
+  async restoreAllInstalled(): Promise<void> {
+    const api = (window as any).electronAPI?.plugin
+    if (!api?.listInstalled) return
+    const res = await api.listInstalled().catch(() => null)
+    if (!res?.success) return
+    for (const dir of res.dirs) {
+      await this.restoreInstalled(dir).catch(() => {})
+    }
+    // 同步 localStorage installedPaths（兼容旧逻辑/卸载过滤），但不再作为事实源
+    const paths = this.getInstalledPaths()
+    let changed = false
+    for (const dir of res.dirs) {
+      if (!paths.includes(dir)) { paths.push(dir); changed = true }
+    }
+    if (changed) this.saveInstalledPaths(paths)
   }
 
   /** 加载并注册插件 */
@@ -558,8 +577,9 @@ class PluginSystemImpl {
       .sort((a, b) => a.order - b.order)
   }
 
-  /** 公共：注册导航项（Cordis client 半端用） */
+  /** 公共：注册导航项（Cordis client 半端用；同 id 去重，避免 StrictMode 双执行重复挂载） */
   registerNav(item: NavItemDef) {
+    this.navItems = this.navItems.filter(n => n.id !== item.id)
     this.navItems.push(item)
   }
 
@@ -576,6 +596,17 @@ class PluginSystemImpl {
 
   getRoute(id: string): (() => Promise<any>) | undefined {
     return this.routes.get(id)
+  }
+
+  /** 调试：导出插件系统完整状态（nav/routes/plugins/installedPaths） */
+  debugState() {
+    return {
+      navItems: this.navItems.map(n => ({ id: n.id, label: n.label, order: n.order })),
+      routes: [...this.routes.keys()],
+      plugins: [...this.plugins.keys()],
+      installedPaths: this.getInstalledPaths(),
+      enabled: [...getEnabledSet()],
+    }
   }
 
   private reloadAll() {

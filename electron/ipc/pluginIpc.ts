@@ -15,6 +15,15 @@ import {
 } from '../main/pluginRepoManager.js'
 
 export function registerPluginIpc(): void {
+  // ==================== 渲染进程日志转发（dev 调试用） ====================
+  // 渲染进程 console 默认只进 devtools；转发到主进程 stdout，便于在终端观察
+  ipcMain.on('renderer:log', (_e, level: string, args: unknown[]) => {
+    try {
+      const line = (args || []).map(a => typeof a === 'string' ? a : (a instanceof Error ? (a.stack || a.message) : JSON.stringify(a))).join(' ')
+      console.log(`[renderer:${level || 'log'}] ${line}`)
+    } catch {}
+  })
+
   // ==================== 插件加载与编译 ====================
 
   ipcMain.handle('plugin:load', async (_e, dirPath: string) => {
@@ -27,6 +36,22 @@ export function registerPluginIpc(): void {
       return { success: true, manifest, pluginDir: dirPath }
     } catch (e: any) {
       return { success: false, error: e.message }
+    }
+  })
+
+  // 列出 appData/plugins 下所有已安装插件目录（渲染层以磁盘为唯一事实源，对齐主进程 autoLoad）
+  ipcMain.handle('plugin:listInstalled', async () => {
+    try {
+      const pluginsDir = path.join(app.getPath('userData'), 'plugins')
+      if (!fs.existsSync(pluginsDir)) return { success: true, dirs: [] }
+      const dirs = fs.readdirSync(pluginsDir, { withFileTypes: true })
+        .filter(d => d.isDirectory())
+        .map(d => path.join(pluginsDir, d.name))
+        .filter(dir => fs.existsSync(path.join(dir, 'manifest.json')))
+      console.log(`[plugin:listInstalled] ${dirs.length} 个插件目录`)
+      return { success: true, dirs }
+    } catch (e: any) {
+      return { success: false, error: e.message, dirs: [] }
     }
   })
 

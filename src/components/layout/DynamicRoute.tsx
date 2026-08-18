@@ -36,7 +36,12 @@ export function DynamicRoute({ nav, onNavChange }: Props) {
 
   useEffect(() => {
     const loader = pluginSystem.getRoute(nav)
-    if (!loader) { setComp(null); return }
+    if (!loader) {
+      // 调试：打印插件系统完整状态，定位路由缺失原因
+      console.warn(`[DynamicRoute] 路由 "${nav}" 不存在`, JSON.stringify(pluginSystem.debugState()))
+      setComp(null)
+      return
+    }
     setLoading(true)
     loader().then(mod => {
       setComp(() => mod.default || Object.values(mod)[0])

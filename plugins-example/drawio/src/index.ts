@@ -19,14 +19,14 @@ export function apply(ctx: any) {
 
   async function _listDiagrams(): Promise<any[]> {
     const sb = getSB()
-    const { data, error } = await sb.from('drawio_diagrams').select('id,name,updated_at').order('updated_at', { ascending: false })
+    const { data, error } = await sb.from('drawios').select('id,name,updated_at').order('updated_at', { ascending: false })
     if (error) throw error
     return data || []
   }
 
   async function _getDiagram(id: string): Promise<any> {
     const sb = getSB()
-    const { data, error } = await sb.from('drawio_diagrams').select('*').eq('id', id).maybeSingle()
+    const { data, error } = await sb.from('drawios').select('*').eq('id', id).maybeSingle()
     if (error) throw error
     if (!data) throw new Error(`未找到图表 id=${id}`)
     return data

@@ -139,6 +139,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     saveAIModels: (models: any[]) => ipcRenderer.invoke('config:saveAIModels', models),
   },
 
+  supabase: {
+    setSession: (session: { access_token: string; refresh_token?: string }) =>
+      ipcRenderer.invoke('supabase:setSession', session),
+    clearSession: () => ipcRenderer.invoke('supabase:clearSession'),
+  },
+
   conv: {
     list: (projectId?: string | null) => ipcRenderer.invoke('conv:list', projectId),
     get: (id: string) => ipcRenderer.invoke('conv:get', id),
@@ -196,6 +202,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   plugin: {
     load: (dirPath: string) => ipcRenderer.invoke('plugin:load', dirPath),
+    listInstalled: () => ipcRenderer.invoke('plugin:listInstalled'),
     install: (dirPath: string) => ipcRenderer.invoke('plugin:install', dirPath),
     installDeps: (dirPath: string) => ipcRenderer.invoke('plugin:installDeps', dirPath),
     compile: (dirPath: string) => ipcRenderer.invoke('plugin:compile', dirPath),
@@ -216,6 +223,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     loadClientCode: (pluginDir: string) => ipcRenderer.invoke('cordis:loadClientCode', pluginDir),
     listTools: () => ipcRenderer.invoke('cordis:listTools'),
     callTool: (toolName: string, args: Record<string, unknown>) => ipcRenderer.invoke('cordis:callTool', toolName, args),
+  },
+
+  // 渲染进程日志转发（dev 调试用）：console → 主进程 stdout
+  rendererLog: (level: string, args: unknown[]) => {
+    try { ipcRenderer.send('renderer:log', level, args) } catch {}
   },
 
   search: {

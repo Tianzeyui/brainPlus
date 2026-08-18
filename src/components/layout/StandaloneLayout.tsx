@@ -21,11 +21,9 @@ export function StandaloneLayout({ nav }: Props) {
     // 先初始化宿主内置页面，再恢复插件（避免 client 半端竞态）
     import('@/lib/cordisClient').then(async (m) => {
       m.initHostPages()
-      const paths = pluginSystem.getInstalledPaths()
-      if (paths.length > 0) {
-        await Promise.all(paths.map(p => pluginSystem.restoreInstalled(p).catch(() => {})))
-        setVersion(pluginSystem.getVersion())
-      }
+      // 从磁盘恢复全部已安装插件（唯一事实源 = appData/plugins，对齐主进程 autoLoad）
+      await pluginSystem.restoreAllInstalled()
+      setVersion(pluginSystem.getVersion())
       setReady(true)
     })
     return pluginSystem.onChange(() => setVersion(pluginSystem.getVersion()))

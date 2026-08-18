@@ -102,6 +102,10 @@ export interface ElectronAPI {
     getAIModels: () => Promise<any[]>
     saveAIModels: (models: any[]) => Promise<void>
   }
+  supabase: {
+    setSession: (session: { access_token: string; refresh_token?: string }) => Promise<{ success: boolean; error?: string }>
+    clearSession: () => Promise<{ success: boolean }>
+  }
   model: {
     getStatus: () => Promise<Array<{ id: string; name: string; size: string; installed: boolean; enabled: boolean; progress?: number }>>
     toggleEnabled: (id: string, enabled: boolean) => Promise<boolean>

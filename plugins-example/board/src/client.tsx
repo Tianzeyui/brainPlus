@@ -1,25 +1,69 @@
 /**
- * board — CLIENT 半端
+ * board — CLIENT 半端（页面挂载）
  *
- * 工具已在主进程可用；UI 页面待迁移（暂显示占位说明）。
+ * 渲染进程执行：挂载看板页面（泳道+阶段矩阵式任务看板）。
+ * 数据读写直接走渲染进程已登录的 Supabase client（ctx.supabase.getClient()），
+ * 与旧范式 ctx.api.supabase.getClient() 行为一致。
  */
-import React from 'react'
+import React, { useState, useEffect } from 'react'
+import { Loader2 } from 'lucide-react'
+import { BoardPage } from '../BoardPage'
+import { initApi } from '../api'
 
-export function PlaceholderPage() {
-  return (
-    <div className="p-10 max-w-lg">
-      <h2 className="text-lg font-bold mb-3">卡片看板 插件</h2>
-      <p className="text-sm text-muted-foreground mb-4">
-        AI 工具已通过主进程 Cordis 注册（可用）。此插件的图形界面正在迁移中，敬请期待。
-      </p>
-      <div className="text-xs text-muted-foreground/60 bg-muted rounded-md p-3">
-        可用工具：见工具列表（AI 对话中可直接调用）
+// registerClient 时注入的宿主 supabase 获取函数（渲染进程已登录的 client）
+let getSupabaseClient: (() => any) | null = null
+
+function BoardApp() {
+  const [ready, setReady] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    async function setup() {
+      try {
+        const client = getSupabaseClient?.()
+        if (!client) {
+          if (!cancelled) setError('Supabase 未配置，请在设置中配置 Supabase 后使用看板功能。')
+          return
+        }
+        const { data } = await client.auth.getUser()
+        if (cancelled) return
+        if (!data.user) {
+          setError('未登录。请先在设置中登录 Supabase 账号后再使用看板功能。')
+          return
+        }
+        initApi(client, data.user.id)
+        setReady(true)
+      } catch (e: any) {
+        if (!cancelled) setError('初始化失败: ' + (e.message || '未知错误'))
+      }
+    }
+    setup()
+    return () => { cancelled = true }
+  }, [])
+
+  if (error) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-3 text-muted-foreground bg-background">
+        <div className="text-4xl">⚠️</div>
+        <p className="text-xs">{error}</p>
       </div>
-    </div>
-  )
+    )
+  }
+
+  if (!ready) {
+    return (
+      <div className="h-full flex items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  return <BoardPage />
 }
 
 export function registerClient(ctx: any) {
-  ctx.registerNav({ id: 'board', label: '卡片看板', icon: 'FolderKanban', order: 80 })
-  ctx.registerRoute('board', () => Promise.resolve({ default: PlaceholderPage }))
+  getSupabaseClient = ctx.supabase?.getClient?.bind(ctx.supabase) || null
+  ctx.registerNav({ id: 'board', label: '卡片看板', icon: 'FolderKanban', order: 70 })
+  ctx.registerRoute('board', () => Promise.resolve({ default: BoardApp }))
 }
