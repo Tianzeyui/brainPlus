@@ -268,6 +268,12 @@ export function registerPluginIpc(): void {
     return loadCordisPlugin(pluginDir)
   })
 
+  // 卸载 Cordis 插件（移除工具/服务）
+  ipcMain.handle('cordis:unloadPlugin', async (_e, pluginId: string) => {
+    const { unloadCordisPlugin } = await import('../main/cordisRuntime.js')
+    return unloadCordisPlugin(pluginId)
+  })
+
   // 列出已注册的 Cordis 工具
   ipcMain.handle('cordis:listTools', async () => {
     const { listCordisTools } = await import('../main/cordisRuntime.js')

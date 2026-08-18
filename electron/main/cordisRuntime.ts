@@ -129,6 +129,7 @@ async function autoLoadInstalledPlugins(): Promise<void> {
 
 /** 加载一个静态 Cordis 插件（lib/index.js，零 esbuild） */
 const loadedPluginIds = new Set<string>()
+const loadedPluginEntries = new Map<string, any>()
 
 export async function loadCordisPlugin(pluginDir: string): Promise<{ success: boolean; error?: string; id?: string }> {
   try {
@@ -154,10 +155,28 @@ export async function loadCordisPlugin(pluginDir: string): Promise<{ success: bo
     const entry = typeof plugin === 'function' ? plugin : { name: plugin.name, inject: plugin.inject, provide: plugin.provide, apply }
     await ctx.plugin(entry)
     loadedPluginIds.add(id)
+    loadedPluginEntries.set(id, entry)
     console.log(`[cordis] 插件已加载: ${id}`)
     return { success: true, id }
   } catch (e: any) {
     console.error('[cordis] 插件加载失败:', e?.stack || e?.message || e)
+    return { success: false, error: e?.message || String(e) }
+  }
+}
+
+/** 卸载一个 Cordis 插件（移除其工具/服务） */
+export async function unloadCordisPlugin(pluginId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const ctx = getCordisCtx()
+    const entry = loadedPluginEntries.get(pluginId)
+    if (!entry) return { success: false, error: `插件 ${pluginId} 未加载` }
+    ctx.registry.delete(entry)
+    loadedPluginIds.delete(pluginId)
+    loadedPluginEntries.delete(pluginId)
+    console.log(`[cordis] 插件已卸载: ${pluginId}`)
+    return { success: true }
+  } catch (e: any) {
+    console.error('[cordis] 插件卸载失败:', e?.message)
     return { success: false, error: e?.message || String(e) }
   }
 }

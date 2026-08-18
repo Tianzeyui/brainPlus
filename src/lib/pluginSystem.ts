@@ -480,13 +480,34 @@ class PluginSystemImpl {
     if (enabled) enabledSet.add(id)
     else enabledSet.delete(id)
     saveEnabledSet(enabledSet)
-    // Cordis 插件：主进程管理启停（reloadAll 会清空其导航导致全隐藏）
+    // Cordis 插件：主进程卸载/加载 + 渲染进程导航显隐
     if ((entry as any).paradigm === 'cordis') {
+      const cordis = (window as any).electronAPI?.cordis
+      if (enabled) {
+        // 重新加载（工具 + 导航）
+        if (entry.pluginDir && cordis) {
+          cordis.loadPlugin(entry.pluginDir).then(() => {
+            import('./cordisClient').then(({ loadPluginClient }) => {
+              loadPluginClient(entry.pluginDir!, id).catch(() => {})
+            })
+          })
+        }
+      } else {
+        // 卸载工具 + 移除导航
+        if (cordis) cordis.unloadPlugin(id).catch(() => {})
+        this.removePluginNav(id)
+      }
       this.bump()
       return
     }
     this.reloadAll()
     this.bump()
+  }
+
+  /** 移除插件的导航项（停用 Cordis 插件时） */
+  removePluginNav(id: string) {
+    this.navItems = this.navItems.filter(n => n.id !== id)
+    this.routes.delete(id)
   }
 
   isEnabled(id: string): boolean { return getEnabledSet().has(id) }
