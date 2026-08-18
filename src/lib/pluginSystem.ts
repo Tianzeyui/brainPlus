@@ -469,6 +469,12 @@ class PluginSystemImpl {
       .sort((a, b) => a.order - b.order)
   }
 
+  /** 公共：注册导航项（Cordis client 半端用） */
+  registerNav(item: NavItemDef) { this.navItems.push(item) }
+
+  /** 公共：注册路由（Cordis client 半端用） */
+  registerRoute(id: string, loader: () => Promise<any>) { this.routes.set(id, loader) }
+
   /** 判断导航项是否为第三方插件（非核心内建功能） */
   isPlugin(id: string): boolean {
     const entry = this.plugins.get(id)

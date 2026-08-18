@@ -212,6 +212,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Cordis 新范式
   cordis: {
     loadPlugin: (pluginDir: string) => ipcRenderer.invoke('cordis:loadPlugin', pluginDir),
+    loadClientCode: (pluginDir: string) => ipcRenderer.invoke('cordis:loadClientCode', pluginDir),
     listTools: () => ipcRenderer.invoke('cordis:listTools'),
     callTool: (toolName: string, args: Record<string, unknown>) => ipcRenderer.invoke('cordis:callTool', toolName, args),
   },

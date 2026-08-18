@@ -274,6 +274,18 @@ export function registerPluginIpc(): void {
     return { success: true, tools: listCordisTools() }
   })
 
+  // 读取插件 client 半端源码（渲染进程无 fs，由主进程读）
+  ipcMain.handle('cordis:loadClientCode', async (_e, pluginDir: string) => {
+    try {
+      const clientPath = path.join(pluginDir, 'lib', 'client.js')
+      if (!fs.existsSync(clientPath)) return { success: false, error: '未找到 lib/client.js' }
+      const code = fs.readFileSync(clientPath, 'utf-8')
+      return { success: true, code }
+    } catch (e: any) {
+      return { success: false, error: e.message }
+    }
+  })
+
   // 调用 Cordis 插件注册的工具（execute 在主进程）
   ipcMain.handle('cordis:callTool', async (_e, toolName: string, args: Record<string, unknown>) => {
     const { getCordisCtx } = await import('../main/cordisRuntime.js')

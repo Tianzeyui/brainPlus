@@ -1,12 +1,16 @@
 #!/usr/bin/env node
 /**
- * 编译单个插件源码 → lib/index.js（CJS bundle）
+ * 编译插件源码 → lib/（CJS bundle）
  *
  * 用法: node scripts/build-plugin.mjs <插件目录>
  *   node scripts/build-plugin.mjs plugins-example/hello-cordis
  *
- * 产物: <插件目录>/lib/index.js  — 运行时直接 require，零 esbuild/零 spawn
- * 插件 package.json 里 dependencies 只用于宿主提供的包名（external）
+ * 产物:
+ *   <插件目录>/lib/index.js   — HOST 半端（主进程 Cordis 运行）
+ *   <插件目录>/lib/client.js  — CLIENT 半端（渲染进程页面挂载，可选）
+ *
+ * 运行时直接 require lib/*.js，零 esbuild/零 spawn。
+ * 宿主提供的模块 external（由宿主 require 提供）。
  */
 import { build } from 'esbuild'
 import { existsSync } from 'fs'
@@ -22,21 +26,9 @@ if (!pluginDir) {
 }
 
 const absDir = path.resolve(pluginDir)
-const srcEntry = path.join(absDir, 'src', 'index.ts')
-const jsEntry = path.join(absDir, 'src', 'index.js')
-
-// 入口文件（ts 优先）
-let entry = srcEntry
-if (!existsSync(srcEntry)) {
-  entry = jsEntry
-  if (!existsSync(jsEntry)) {
-    console.error(`未找到 src/index.ts 或 src/index.js: ${absDir}`)
-    process.exit(1)
-  }
-}
 
 // 宿主提供的模块（external，运行时由宿主 require）
-// 对齐 hostModules / cordisRuntime 提供的服务
+// 对齐 cordisRuntime / hostModules 提供的服务
 const HOST_MODULES = [
   '@deepseek-ai/dsh-tools',
   '@deepseek-ai/cordis',
@@ -45,16 +37,46 @@ const HOST_MODULES = [
   'lucide-react',
 ]
 
-await build({
-  entryPoints: [entry],
-  bundle: true,
-  outfile: path.join(absDir, 'lib', 'index.js'),
-  format: 'cjs',
-  platform: 'node',
-  target: 'node18',
-  external: HOST_MODULES,
-  sourcemap: false,
-  minify: false,
-})
+const outDir = path.join(absDir, 'lib')
 
-console.log(`✅ 编译完成: ${path.join(absDir, 'lib', 'index.js')}`)
+// ---- HOST 半端: src/index.ts → lib/index.js ----
+const hostSrc = path.join(absDir, 'src', 'index.ts')
+const hostSrcJs = path.join(absDir, 'src', 'index.js')
+const hostEntry = existsSync(hostSrc) ? hostSrc : hostSrcJs
+if (existsSync(hostEntry)) {
+  await build({
+    entryPoints: [hostEntry],
+    bundle: true,
+    outfile: path.join(outDir, 'index.js'),
+    format: 'cjs',
+    platform: 'node',
+    target: 'node18',
+    external: HOST_MODULES,
+    sourcemap: false,
+    minify: false,
+  })
+  console.log(`✅ HOST: ${path.join(outDir, 'index.js')}`)
+} else {
+  console.log('⚠️ 无 src/index.ts（跳过 HOST 半端）')
+}
+
+// ---- CLIENT 半端: src/client.ts → lib/client.js ----
+const clientSrc = path.join(absDir, 'src', 'client.ts')
+const clientSrcJs = path.join(absDir, 'src', 'client.js')
+const clientEntry = existsSync(clientSrc) ? clientSrc : clientSrcJs
+if (existsSync(clientEntry)) {
+  await build({
+    entryPoints: [clientEntry],
+    bundle: true,
+    outfile: path.join(outDir, 'client.js'),
+    format: 'cjs',
+    platform: 'browser',
+    target: 'es2020',
+    external: HOST_MODULES,
+    sourcemap: false,
+    minify: false,
+  })
+  console.log(`✅ CLIENT: ${path.join(outDir, 'client.js')}`)
+} else {
+  console.log('ℹ️ 无 src/client.ts（无页面挂载）')
+}
