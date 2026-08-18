@@ -29,29 +29,59 @@ var import_jsx_runtime = require("react/jsx-runtime");
 function HelloPage() {
   const [name, setName] = (0, import_react.useState)("");
   const [greeting, setGreeting] = (0, import_react.useState)("");
-  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "p-8 max-w-md", children: [
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { className: "text-lg font-bold mb-4", children: "Hello World \u63D2\u4EF6\uFF08\u65B0\u8303\u5F0F\uFF09" }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-xs text-muted-foreground mb-4", children: "\u8FD9\u662F\u63D2\u4EF6\u81EA\u5E26\u7684 React \u9875\u9762\uFF0C\u901A\u8FC7 CLIENT \u534A\u7AEF\u52A0\u8F7D\u3002\u5DE5\u5177\u5728 HOST \u534A\u7AEF\uFF08\u4E3B\u8FDB\u7A0B Cordis\uFF09\u3002" }),
-    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex gap-2 mb-4", children: [
-      /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
-        "input",
-        {
-          className: "flex-1 h-8 rounded-md border border-input bg-background px-3 text-sm",
-          placeholder: "\u8F93\u5165\u4F60\u7684\u540D\u5B57",
-          value: name,
-          onChange: (e) => setName(e.target.value)
-        }
-      ),
+  const [testResult, setTestResult] = (0, import_react.useState)("");
+  const tests = [
+    { name: "hello_world", desc: "\u57FA\u7840\u5DE5\u5177\uFF08\u4E3B\u8FDB\u7A0B\u6267\u884C\uFF09" },
+    { name: "hello_sidecar", desc: "\u5BBF\u4E3B sidecar \u670D\u52A1\u8C03\u7528" },
+    { name: "hello_fs", desc: "\u5BBF\u4E3B fs \u670D\u52A1\u8C03\u7528" }
+  ];
+  return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "p-8 max-w-lg", children: [
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", { className: "text-lg font-bold mb-1", children: "Hello World \u63D2\u4EF6\uFF08\u65B0\u8303\u5F0F\u57FA\u51C6\u6D4B\u8BD5\uFF09" }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-xs text-muted-foreground mb-5", children: "\u9A8C\u8BC1\uFF1ACordis \u8FD0\u884C\u65F6 / \u5BBF\u4E3B\u670D\u52A1\u6CE8\u5165 / \u5DE5\u5177\u4E3B\u8FDB\u7A0B\u6267\u884C / Client \u534A\u7AEF React \u9875\u9762" }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mb-5", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "text-sm font-semibold mb-2", children: "\u5DE5\u5177 1\uFF1Ahello_world" }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex gap-2", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "input",
+          {
+            className: "flex-1 h-8 rounded-md border border-input bg-background px-3 text-sm",
+            placeholder: "\u8F93\u5165\u4F60\u7684\u540D\u5B57",
+            value: name,
+            onChange: (e) => setName(e.target.value)
+          }
+        ),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+          "button",
+          {
+            className: "px-3 h-8 rounded-md bg-primary text-primary-foreground text-sm",
+            onClick: () => setGreeting(`Hello, ${name || "World"}!`),
+            children: "\u6253\u62DB\u547C"
+          }
+        )
+      ] }),
+      greeting && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-sm text-primary bg-primary/10 rounded-md px-3 py-2 mt-2", children: greeting })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "mb-5", children: [
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", { className: "text-sm font-semibold mb-2", children: "\u80FD\u529B\u57FA\u51C6\u6D4B\u8BD5\uFF083 \u4E2A\u5DE5\u5177\uFF09" }),
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", { className: "space-y-1.5", children: tests.map((t) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "flex items-center gap-2 text-xs", children: [
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "px-1.5 py-0.5 rounded bg-muted font-mono", children: t.name }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "text-muted-foreground", children: t.desc }),
+        /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "ml-auto text-emerald-500", children: "\u2713 \u5DF2\u6CE8\u518C" })
+      ] }, t.name)) })
+    ] }),
+    /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", { className: "text-[11px] text-muted-foreground/60 bg-muted/50 rounded-md p-3", children: [
+      "\u670D\u52A1\uFF1AhelloService\uFF08ctx.provide\uFF09\xB7 \u751F\u547D\u5468\u671F\uFF1Actx.effect\uFF08\u5378\u8F7D\u81EA\u52A8\u6E05\u7406\uFF09",
+      /* @__PURE__ */ (0, import_jsx_runtime.jsx)("br", {}),
       /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
         "button",
         {
-          className: "px-3 h-8 rounded-md bg-primary text-primary-foreground text-sm",
-          onClick: () => setGreeting(`Hello, ${name || "World"}!`),
-          children: "\u6253\u62DB\u547C"
+          className: "mt-2 px-2 py-1 rounded bg-border text-foreground text-[11px] hover:bg-accent",
+          onClick: () => setTestResult("\u63D2\u4EF6\u52A0\u8F7D\u6B63\u5E38\uFF1A\u5DE5\u5177/\u670D\u52A1/\u9875\u9762\u5168\u90E8\u5C31\u7EEA"),
+          children: "\u8FD0\u884C\u81EA\u68C0"
         }
-      )
-    ] }),
-    greeting && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "text-sm text-primary bg-primary/10 rounded-md px-3 py-2", children: greeting })
+      ),
+      testResult && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { className: "mt-2 text-emerald-500", children: testResult })
+    ] })
   ] });
 }
 function registerClient(ctx) {

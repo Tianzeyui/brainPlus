@@ -1,0 +1,8 @@
+{
+  "name": "mindmap",
+  "version": "1.0.0",
+  "description": "思维导图，树形脑图可视化",
+  "private": true,
+  "main": "lib/index.js",
+  "dependencies": {}
+}
