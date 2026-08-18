@@ -487,8 +487,10 @@ class PluginSystemImpl {
         // 重新加载（工具 + 导航）
         if (entry.pluginDir && cordis) {
           cordis.loadPlugin(entry.pluginDir).then(() => {
-            import('./cordisClient').then(({ loadPluginClient }) => {
-              loadPluginClient(entry.pluginDir!, id).catch(() => {})
+            import('./cordisClient').then(async ({ loadPluginClient }) => {
+              await loadPluginClient(entry.pluginDir!, id).catch(() => {})
+              // 导航恢复后再次 bump，确保 Sidebar 感知（loadPluginClient 是异步的）
+              this.bump()
             })
           })
         }
