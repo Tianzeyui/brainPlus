@@ -11,6 +11,7 @@
  *   - 字符串 pageId（挂载宿主内置页面 hostPageRegistry）
  */
 import React from 'react'
+import * as jsxRuntime from 'react/jsx-runtime'
 import * as Lucide from 'lucide-react'
 import { pluginSystem } from './pluginSystem'
 
@@ -47,10 +48,10 @@ export async function loadPluginClient(pluginDir: string, pluginId: string): Pro
 
     // 执行 client 半端（CJS 求值，宿主提供 React 等模块）
     const module = { exports: {} as any }
-    // 宿主模块（对齐旧 hostModules）：渲染进程提供 React/lucide 等
+    // 宿主模块（对齐旧 hostModules）：渲染进程提供 React/jsx-runtime/lucide 等
     const hostModules: Record<string, any> = {
       'react': React,
-      'react/jsx-runtime': (React as any).jsxRuntime || React,
+      'react/jsx-runtime': jsxRuntime,
       'react-dom': null,
       'lucide-react': Lucide,
     }

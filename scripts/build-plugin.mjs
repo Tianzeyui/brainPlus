@@ -73,7 +73,10 @@ if (clientEntry) {
     format: 'cjs',
     platform: 'browser',
     target: 'es2020',
-    jsx: 'automatic',
+    // 经典 JSX 模式：生成 React.createElement（渲染进程宿主只提供 react，避免 jsx-runtime 依赖）
+    jsx: 'transform',
+    jsxFactory: 'React.createElement',
+    jsxFragment: 'React.Fragment',
     external: HOST_MODULES,
     sourcemap: false,
     minify: false,
