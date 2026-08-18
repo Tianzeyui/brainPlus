@@ -88,7 +88,9 @@
       "public/**/*"
     ],
     "asarUnpack": [
-      "node_modules/node-pty/**"
+      "node_modules/node-pty/**",
+      "node_modules/esbuild/**",
+      "node_modules/@esbuild/**"
     ],
     "extraResources": [
       {

@@ -123,8 +123,9 @@ export function registerPluginIpc(): void {
         plugins: [{
           name: 'resolve-at-alias',
           setup(build) {
+            // 宿主组件引用保持原样 external（运行时由宿主 require 解析），不替换成绝对路径
             build.onResolve({ filter: /^@\/components\/(diary|inspiration)\// }, args => ({
-              path: args.path.replace('@/', '/src/'), external: true,
+              path: args.path, external: true,
             }))
           },
         }],
@@ -132,7 +133,9 @@ export function registerPluginIpc(): void {
       const code = result.outputFiles?.[0]?.text || ''
       return { success: true, code }
     } catch (e: any) {
-      return { success: false, error: e.message }
+      // 详细错误日志（electron-log 会写入 ~/Library/Logs/Stardust/main.log）
+      console.error(`[plugin:compile] 编译失败 (${dirPath}):`, e?.stack || e?.message || e)
+      return { success: false, error: e?.message || String(e) }
     }
   })
 

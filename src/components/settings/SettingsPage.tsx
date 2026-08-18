@@ -107,43 +107,7 @@ export function SettingsPage({ onClose, initialTab }: { onClose?: () => void; in
   const [graphTestMsg, setGraphTestMsg] = useState('')
   const [capExpanded, setCapExpanded] = useState<Record<string, boolean>>({ sandbox: true, search: true })
 
-  // 更新日志（优先本地，CDN 备用）
-  const [changelog, setChangelog] = useState<Array<{ version: string; date: string; items: string[] }>>([])
-  useEffect(() => {
-    const CDN_URL = 'https://cdn.jsdelivr.net/gh/Tianzeyui/stardust@main/CHANGELOG.md'
-    const parseChangelog = (text: string) => {
-      const entries: Array<{ version: string; date: string; items: string[] }> = []
-      const sections = text.split(/\n## /).slice(1)
-      for (const sec of sections) {
-        const lines = sec.trim().split('\n')
-        const headerMatch = lines[0].match(/^v([\d.]+)\s*(?:\((.+?)\))?/)
-        if (!headerMatch) continue
-        const items = lines.slice(1).filter(l => l.trim().startsWith('- ')).map(l => l.replace(/^-\s*/, ''))
-        entries.push({ version: `v${headerMatch[1]}`, date: headerMatch[2] || '', items })
-      }
-      return entries
-    }
-    const fetchChangelog = async () => {
-      // 1. 先尝试本地文件（打包时在 public/ 目录）
-      try {
-        const res = await fetch('/CHANGELOG.md')
-        if (res.ok) {
-          const text = await res.text()
-          setChangelog(parseChangelog(text))
-          return
-        }
-      } catch {}
-      // 2. CDN 备用
-      try {
-        const api = (window as any).electronAPI?.http
-        if (!api) return
-        const result = await api.fetch(CDN_URL)
-        if (!result.success || result.status !== 200) return
-        setChangelog(parseChangelog(result.data))
-      } catch {}
-    }
-    fetchChangelog()
-  }, [])
+  // 更新日志已迁移至 AboutTab（数据源 docs/releases/），此处旧逻辑已移除
 
   useEffect(() => {
     // 通用

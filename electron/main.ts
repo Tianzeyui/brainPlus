@@ -132,10 +132,9 @@ app.whenReady().then(async () => {
   // ---- 自动更新（正式打包环境） ----
   initAutoUpdater()
 
-  // ---- macOS Dock 图标 + 关于信息 ----
-  if (process.platform === 'darwin' && appIcon && app.dock) {
-    app.dock.setIcon(appIcon)
-  }
+  // ---- macOS 关于信息 ----
+  // 注意：不调用 app.dock.setIcon() —— Dock 图标应使用打包的 icon.icns（边距规范），
+  // 用 PNG 覆盖会导致 Dock 图标内容占比过大而显得偏大
   app.setAboutPanelOptions({
     applicationName: 'Stardust',
     applicationVersion: app.getVersion(),
