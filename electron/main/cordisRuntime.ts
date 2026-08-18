@@ -45,6 +45,10 @@ export function initCordisRuntime(): Context {
   new SystemPrompt(ctx, { includeHarnessIdentity: true, persona: '' })
   new ToolRegistry(ctx, { mode: 'native' })
 
+  // 宿主注入 defineTool（插件无需 require dsh-tools，对齐 DSH 沙箱的 harness 助手）
+  const { defineTool } = req('@deepseek-ai/dsh-tools') as any
+  ctx.provide('defineTool', defineTool)
+
   // ---- 宿主服务：sidecar（统一能力入口） ----
   ctx.provide('sidecar', {
     call: (method: string, params?: Record<string, unknown>, timeout?: number) =>
@@ -106,7 +110,8 @@ export async function loadCordisPlugin(pluginDir: string): Promise<{ success: bo
       return { success: false, error: `未找到插件入口: ${libPath}` }
     }
     // 动态 require（CJS 插件模块）
-    const pluginModule = require(libPath)
+    // 用宿主 createRequire 加载：插件内的 require('@deepseek-ai/...') 从宿主 node_modules 解析
+    const pluginModule = req(libPath)
     const plugin = pluginModule.default || pluginModule
     // 支持两种形态：{ name, apply } 对象 或 函数
     const apply = typeof plugin === 'function' ? plugin : plugin?.apply

@@ -26,12 +26,12 @@ __export(index_exports, {
   provide: () => provide
 });
 module.exports = __toCommonJS(index_exports);
-var import_dsh_tools = require("@deepseek-ai/dsh-tools");
 var name = "diary";
 var inject = ["tools", "supabase"];
 var provide = [];
 function apply(ctx) {
-  ctx.tools.register((0, import_dsh_tools.defineTool)({
+  const defineTool = ctx.get("defineTool");
+  ctx.tools.register(defineTool({
     name: "diary_timeline",
     description: "\u67E5\u770B\u65E5\u8BB0\u65F6\u95F4\u7EBF\uFF0C\u5217\u51FA\u6709\u65E5\u8BB0\u8BB0\u5F55\u7684\u65E5\u671F\u53CA\u6807\u9898\u3002\u53EF\u7528\u4E8E\u5FEB\u901F\u4E86\u89E3\u7528\u6237\u7684\u65E5\u8BB0\u4E60\u60EF\u548C\u5173\u6CE8\u8BDD\u9898\u3002\u4E0D\u8FD4\u56DE\u6B63\u6587\u5185\u5BB9\uFF0C\u9700\u8981\u8BE6\u7EC6\u5185\u5BB9\u65F6\u4F7F\u7528 diary_get\u3002",
     parameters: {
@@ -73,7 +73,7 @@ ${lines.join("\n")}`;
       }
     }
   }));
-  ctx.tools.register((0, import_dsh_tools.defineTool)({
+  ctx.tools.register(defineTool({
     name: "diary_get",
     description: "\u83B7\u53D6\u6307\u5B9A\u65E5\u671F\u7684\u65E5\u8BB0\u5168\u6587\u3002\u5148\u7528 diary_timeline \u67E5\u770B\u6709\u54EA\u4E9B\u65E5\u671F\u6709\u65E5\u8BB0\uFF0C\u518D\u6309\u65E5\u671F\u8BFB\u53D6\u8BE6\u7EC6\u5185\u5BB9\u3002\u5982\u679C\u7528\u6237\u63D0\u5230\u67D0\u4E2A\u65E5\u671F\u6216\u4E8B\u4EF6\uFF0C\u53EF\u4EE5\u7528\u6B64\u5DE5\u5177\u67E5\u770B\u5F53\u5929\u7684\u65E5\u8BB0\u3002",
     parameters: {

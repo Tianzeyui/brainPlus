@@ -26,16 +26,16 @@ __export(index_exports, {
   provide: () => provide
 });
 module.exports = __toCommonJS(index_exports);
-var import_dsh_tools = require("@deepseek-ai/dsh-tools");
 var name = "hello-world";
 var inject = ["tools"];
 var provide = [];
 function apply(ctx) {
-  ctx.tools.register((0, import_dsh_tools.defineTool)({
+  const defineTool = ctx.get("defineTool");
+  ctx.tools.register(defineTool({
     name: "hello_world",
     description: "\u793A\u4F8B\u5DE5\u5177\uFF1A\u8FD4\u56DE Hello World \u6D88\u606F",
     parameters: {
-      name: { type: "string", required: false, description: "\u4F60\u7684\u540D\u5B57\uFF08\u53EF\u9009\uFF09" }
+      name: { type: "string", description: "\u4F60\u7684\u540D\u5B57\uFF08\u53EF\u9009\uFF09" }
     },
     output: {
       schema: { type: "string" },

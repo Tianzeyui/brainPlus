@@ -5,14 +5,14 @@
  * CLIENT 半端：挂载宿主内置 DiaryPage（见 src/client.ts）
  *
  * 构建: node scripts/build-plugin.mjs .（产物 lib/index.js + lib/client.js）
+ * defineTool 由宿主注入（ctx.get('defineTool')），插件无需依赖 dsh-tools
  */
-import { defineTool } from '@deepseek-ai/dsh-tools'
-
 export const name = 'diary'
 export const inject = ['tools', 'supabase']
 export const provide = []
 
 export function apply(ctx: any) {
+  const defineTool = ctx.get('defineTool')
   // ====== 只读工具：时间线 ======
   ctx.tools.register(defineTool({
     name: 'diary_timeline',

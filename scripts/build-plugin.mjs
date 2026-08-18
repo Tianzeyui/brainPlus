@@ -28,7 +28,7 @@ if (!pluginDir) {
 const absDir = path.resolve(pluginDir)
 
 // 宿主提供的模块（external，运行时由宿主 require）
-// 对齐 cordisRuntime / hostModules 提供的服务
+// 插件不直接 import dsh-tools/cordis（defineTool 由 ctx.get('defineTool') 注入）
 const HOST_MODULES = [
   '@deepseek-ai/dsh-tools',
   '@deepseek-ai/cordis',
