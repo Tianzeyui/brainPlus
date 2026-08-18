@@ -60,11 +60,12 @@ if (existsSync(hostEntry)) {
   console.log('⚠️ 无 src/index.ts（跳过 HOST 半端）')
 }
 
-// ---- CLIENT 半端: src/client.ts → lib/client.js ----
-const clientSrc = path.join(absDir, 'src', 'client.ts')
-const clientSrcJs = path.join(absDir, 'src', 'client.js')
-const clientEntry = existsSync(clientSrc) ? clientSrc : clientSrcJs
-if (existsSync(clientEntry)) {
+// ---- CLIENT 半端: src/client.ts(x) → lib/client.js ----
+const clientCandidates = ['src/client.tsx', 'src/client.ts', 'src/client.jsx', 'src/client.js']
+const clientEntry = clientCandidates
+  .map((c) => path.join(absDir, c))
+  .find((p) => existsSync(p))
+if (clientEntry) {
   await build({
     entryPoints: [clientEntry],
     bundle: true,
@@ -72,11 +73,12 @@ if (existsSync(clientEntry)) {
     format: 'cjs',
     platform: 'browser',
     target: 'es2020',
+    jsx: 'automatic',
     external: HOST_MODULES,
     sourcemap: false,
     minify: false,
   })
   console.log(`✅ CLIENT: ${path.join(outDir, 'client.js')}`)
 } else {
-  console.log('ℹ️ 无 src/client.ts（无页面挂载）')
+  console.log('ℹ️ 无 src/client.ts(x)（无页面挂载）')
 }

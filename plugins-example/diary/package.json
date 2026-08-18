@@ -1,0 +1,10 @@
+{
+  "name": "diary",
+  "version": "1.0.0",
+  "description": "AI 辅助日记写作，时间线浏览",
+  "private": true,
+  "main": "lib/index.js",
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.0.1-rc.1"
+  }
+}

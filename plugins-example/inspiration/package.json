@@ -1,0 +1,8 @@
+{
+  "name": "inspiration",
+  "version": "1.0.0",
+  "description": "灵感收集与管理，随机漫步",
+  "private": true,
+  "main": "lib/index.js",
+  "dependencies": {}
+}

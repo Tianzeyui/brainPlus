@@ -36,6 +36,8 @@ export function Sidebar({ activeNav, onNavChange, collapsed, onToggleCollapse, o
 
   useEffect(() => { initCorePlugins(); setReady(true) }, [])
   useEffect(() => {
+    // 初始化宿主内置页面（Cordis client 半端挂载用）
+    import('@/lib/cordisClient').then(m => m.initHostPages())
     // 异步恢复第三方插件
     const paths = pluginSystem.getInstalledPaths()
     if (paths.length > 0) {

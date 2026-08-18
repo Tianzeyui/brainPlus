@@ -326,6 +326,37 @@ class PluginSystemImpl {
     const result = await api.load(dirPath).catch(() => null)
     if (!result?.success) return
     if (this.plugins.has(result.manifest.id)) return
+
+    // 新范式：有 lib/index.js 的插件走 Cordis（host 主进程 + client 渲染进程）
+    const cordis = (window as any).electronAPI?.cordis
+    if (cordis) {
+      try {
+        const loaded = await cordis.loadPlugin(dirPath)
+        if (loaded?.success) {
+          // 加载 client 半端（挂载页面）
+          const { loadPluginClient } = await import('./cordisClient')
+          await loadPluginClient(dirPath, loaded.id || result.manifest.id)
+          // 注册到插件列表（便于 UI 显示/卸载）
+          const manifest = result.manifest
+          this.plugins.set(manifest.id, {
+            plugin: {
+              manifest: { id: manifest.id, name: manifest.name, version: manifest.version, description: manifest.description || '', icon: manifest.icon || 'Package', navOrder: manifest.navOrder || 90, enabled: true, systemHeader: manifest.systemHeader },
+              register: () => {},
+            },
+            core: false,
+            pluginDir: dirPath,
+          })
+          const paths = this.getInstalledPaths()
+          if (!paths.includes(dirPath)) { paths.push(dirPath); this.saveInstalledPaths(paths) }
+          this.bump()
+          return
+        }
+      } catch (e) {
+        console.warn('[PluginSystem] Cordis 加载失败，回退旧范式:', (e as Error).message)
+      }
+    }
+
+    // 旧范式：运行时 esbuild 编译（兼容存量插件）
     await this.loadAndRegister(dirPath).catch(() => {})
   }
 
@@ -470,10 +501,14 @@ class PluginSystemImpl {
   }
 
   /** 公共：注册导航项（Cordis client 半端用） */
-  registerNav(item: NavItemDef) { this.navItems.push(item) }
+  registerNav(item: NavItemDef) {
+    this.navItems.push(item)
+  }
 
   /** 公共：注册路由（Cordis client 半端用） */
-  registerRoute(id: string, loader: () => Promise<any>) { this.routes.set(id, loader) }
+  registerRoute(id: string, loader: () => Promise<any>) {
+    this.routes.set(id, loader)
+  }
 
   /** 判断导航项是否为第三方插件（非核心内建功能） */
   isPlugin(id: string): boolean {

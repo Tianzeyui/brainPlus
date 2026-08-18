@@ -1,0 +1,10 @@
+{
+  "name": "hello-world",
+  "version": "1.0.0",
+  "description": "示例插件——演示 React/TSX、AI 工具",
+  "private": true,
+  "main": "lib/index.js",
+  "dependencies": {
+    "@deepseek-ai/dsh-tools": "0.0.1-rc.1"
+  }
+}

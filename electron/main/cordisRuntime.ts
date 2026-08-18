@@ -20,7 +20,13 @@ import ToolRegistry from '@deepseek-ai/dsh-tools'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import path from 'path'
 import fs from 'fs'
+import { fileURLToPath } from 'url'
+import { createRequire } from 'node:module'
 import { getSidecar } from './sidecarManager.js'
+
+// ESM 环境下的 require（加载 CJS 模块）
+const req = createRequire(import.meta.url)
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 let rootCtx: Context | null = null
 
@@ -63,6 +69,20 @@ export function initCordisRuntime(): Context {
   ctx.provide('mcp', {
     call: (method: string, params?: Record<string, unknown>, timeout?: number) =>
       getSidecar().call(`mcp.${method}`, params || {}, timeout),
+  })
+
+  // ---- 宿主服务：supabase（延迟加载，插件工具调用时获取） ----
+  ctx.provide('supabase', {
+    from: (table: string) => {
+      const { getSupabaseClient } = req(path.join(__dirname, 'supabaseClient.js')) as any
+      const client = getSupabaseClient()
+      if (!client) throw new Error('Supabase 未配置')
+      return client.from(table)
+    },
+    client: () => {
+      const { getSupabaseClient } = req(path.join(__dirname, 'supabaseClient.js')) as any
+      return getSupabaseClient()
+    },
   })
 
   // cordis logger 默认只进 buffer，加 console 输出便于 dev 观察
