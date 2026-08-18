@@ -306,7 +306,13 @@ class PluginSystemImpl {
     // 复制到 appData + 安装依赖 + 返回新路径
     const result = await api.install(dirPath)
     if (!result.success) return result
-    return this.loadAndRegister(result.pluginDir!)
+    const pluginDir = result.pluginDir!
+    // 新范式优先（有 lib/index.js 走 Cordis）
+    const loadRes = await api.load(pluginDir).catch(() => null)
+    if (loadRes?.success && await this.tryLoadCordis(pluginDir, loadRes.manifest)) {
+      return { success: true }
+    }
+    return this.loadAndRegister(pluginDir)
   }
 
   /** 从社区仓库安装插件（通过 jsDelivr CDN） */
